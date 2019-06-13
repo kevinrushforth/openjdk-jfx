@@ -15,7 +15,8 @@ Adding new API means that we have to consider what it means to support that API 
 thing is to think in terms of "stewardship" when evolving the JavaFX API. With that in mind, here are the needed steps to get a new
 feature into JavaFX.
 
-1. Discuss the proposed feature on the openjfx-dev mailing list. You should start with _why_ you think
+1. Discuss the proposed feature on the [openjfx-dev](mailto:openjfx-dev@openjdk.java.net) mailing list.
+You should start with _why_ you think
 adding the API to the core of JavaFX is a good and useful addition for multiple applications (not just your own)
 and for the evolution of the JavaFX UI Toolkit. Part of this is to see whether the Project Leads and Reviewers
 are generally supportive of the idea, as well as to see whether other developers have any ideas as to whether
