@@ -1,4 +1,4 @@
-# Guidelines: New Features in JavaFX
+# Note: New Features in JavaFX
 
 The guidelines for contributing a new features to JavaFX are referred to in the
 [Before submitting a pull request](https://github.com/javafxports/openjdk-jfx/blob/develop/.github/CONTRIBUTING.md#before-submitting-a-pull-request)
