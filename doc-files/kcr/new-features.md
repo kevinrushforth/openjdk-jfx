@@ -1,4 +1,4 @@
-# Notes on JavaFX Features
+# Guidelines: New Features in JavaFX
 
 The guidelines for contributing a new features to JavaFX are referred to in the
 [Before submitting a pull request](https://github.com/javafxports/openjdk-jfx/blob/develop/.github/CONTRIBUTING.md#before-submitting-a-pull-request)
@@ -9,7 +9,7 @@ section of the [OpenJFX Code Review Policies](https://wiki.openjdk.java.net/disp
 The note below contains some additional detail about adding new features to JavaFX. Much of this should make its way back to the
 `CONTRIBUTING` or `Code Review Policies` docs.
 
-### Adding New JavaFX Features
+### New features / API additions
 
 Adding new API means that we have to consider what it means to support that API forever; we take compatibility seriously. The main
 thing is to think in terms of "stewardship" when evolving the JavaFX API. With that in mind, here are the needed steps to get a new
