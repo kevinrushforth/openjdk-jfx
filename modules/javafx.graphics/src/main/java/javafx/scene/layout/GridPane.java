@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -136,7 +136,7 @@ import javafx.util.Callback;
  *
  * By default, rows and columns will be sized to fit their content;
  * a column will be wide enough to accommodate the widest child, a
- * row tall enough to fit the tallest child.However, if an application needs
+ * row tall enough to fit the tallest child. However, if an application needs
  * to explicitly control the size of rows or columns, it may do so by adding
  * RowConstraints and ColumnConstraints objects to specify those metrics.
  * For example, to create a grid with two fixed-width columns:
@@ -962,7 +962,7 @@ public class GridPane extends Pane {
     public final ObservableList<ColumnConstraints> getColumnConstraints() { return columnConstraints; }
 
     /**
-     * Adds a child to the gridpane at the specified column,row position.
+     * Adds a child to the gridpane at the specified [column, row] position.
      * This convenience method will set the gridpane column and row constraints
      * on the child.
      * @param child the node being added to the gridpane
@@ -975,7 +975,7 @@ public class GridPane extends Pane {
     }
 
     /**
-     * Adds a child to the gridpane at the specified column,row position and spans.
+     * Adds a child to the gridpane at the specified [column, row] position and spans.
      * This convenience method will set the gridpane column, row, and span constraints
      * on the child.
      * @param child the node being added to the gridpane

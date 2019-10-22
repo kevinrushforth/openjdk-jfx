@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -193,6 +193,9 @@ class WindowStage extends GlassStage {
                                     (transparent ? Window.TRANSPARENT : Window.UNTITLED) | Window.CLOSABLE;
                             break;
                     }
+                }
+                if (modality != Modality.NONE) {
+                    windowMask |= Window.MODAL;
                 }
                 platformWindow =
                         app.createWindow(ownerWindow, Screen.getMainScreen(), windowMask);
@@ -512,15 +515,15 @@ class WindowStage extends GlassStage {
                 }
             } else if (modality == Modality.APPLICATION_MODAL) {
                 windowsSetEnabled(true);
-            } else {
-                // Note: This method is required to workaround a glass issue
-                // mentioned in RT-12607
-                // If the hiding stage is unfocusable (i.e. it's a PopupStage),
-                // then we don't do this to avoid stealing the focus.
-                if (!isPopupStage && owner != null && owner instanceof WindowStage) {
-                    WindowStage ownerStage = (WindowStage)owner;
-                    ownerStage.requestToFront();
-                }
+            }
+            // Note: This method is required to workaround a glass issue
+            // mentioned in RT-12607
+            // If the hiding stage is unfocusable (i.e. it's a PopupStage),
+            // then we don't do this to avoid stealing the focus.
+            // JDK-8210973: APPLICATION_MODAL window can have owner.
+            if (!isPopupStage && owner != null && owner instanceof WindowStage) {
+                WindowStage ownerStage = (WindowStage)owner;
+                ownerStage.requestToFront();
             }
         }
         QuantumToolkit.runWithRenderLock(() -> {
@@ -832,7 +835,10 @@ class WindowStage extends GlassStage {
     // closed notification. This state is necessary to prevent the platform
     // window from being closed more than once.
     void setPlatformWindowClosed() {
-        platformWindow = null;
+        if (platformWindow != null) {
+            platformWindows.remove(platformWindow);
+            platformWindow = null;
+        }
     }
 
     static void addActiveWindow(WindowStage window) {
@@ -889,12 +895,7 @@ class WindowStage extends GlassStage {
         if (platformWindow != null) {
             platformWindow.setEnabled(enabled);
         }
-        if (enabled) {
-            // Check if window is really enabled - to handle nested case
-            if (platformWindow != null && platformWindow.isEnabled()) {
-                requestToFront();
-            }
-        } else {
+        if (!enabled) {
             removeActiveWindow(this);
         }
     }

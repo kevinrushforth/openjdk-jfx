@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -4306,5 +4306,12 @@ public class TableViewKeyInputTest {
 
         assertEquals(1, sm.getSelectedIndex());
         assertEquals(1, fm.getFocusedIndex());
+    }
+
+    @Test public void test_jdk_8222214() {
+        tableView.getFocusModel().focus(0);
+        keyboard.doUpArrowPress();
+
+        assertEquals(0, tableView.getSelectionModel().getSelectedIndex());
     }
 }

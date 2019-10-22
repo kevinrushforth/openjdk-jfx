@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -646,8 +646,8 @@ public class Region extends Parent {
     /**
      * The top, right, bottom, and left padding around the region's content.
      * This space will be included in the calculation of the region's
-     * minimum and preferred sizes. By default padding is Insets.EMPTY. Setting the
-     * value to null should be avoided.
+     * minimum and preferred sizes. By default, padding is {@code Insets.EMPTY}. Setting the
+     * value to {@code null} should be avoided.
      */
     private ObjectProperty<Insets> padding = new StyleableObjectProperty<Insets>(Insets.EMPTY) {
         // Keep track of the last valid value for the sake of

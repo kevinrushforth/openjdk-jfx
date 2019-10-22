@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,6 +38,7 @@ import java.util.concurrent.CancellationException;
 import java.util.regex.Pattern;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.application.Platform;
 import javafx.beans.NamedArg;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
@@ -619,7 +620,7 @@ public class Image {
     }
 
     /**
-     * Construct a new {@code Image} with the specified parameters.
+     * Constructs a new {@code Image} with the specified parameters.
      *
      * @param url the string representing the URL to use in fetching the pixel
      *      data
@@ -634,7 +635,7 @@ public class Image {
     }
 
     /**
-     * Construct a new {@code Image} with the specified parameters.
+     * Constructs a new {@code Image} with the specified parameters.
      *
      * @param url the string representing the URL to use in fetching the pixel
      *      data
@@ -657,7 +658,7 @@ public class Image {
     }
 
     /**
-     * Construct a new {@code Image} with the specified parameters.
+     * Constructs a new {@code Image} with the specified parameters.
      *
      * The <i>url</i> without scheme is threated as relative to classpath,
      * url with scheme is treated accordingly to the scheme using
@@ -691,7 +692,7 @@ public class Image {
     }
 
     /**
-     * Construct an {@code Image} with content loaded from the specified
+     * Constructs an {@code Image} with content loaded from the specified
      * input stream.
      *
      * @param is the stream from which to load the image
@@ -703,7 +704,7 @@ public class Image {
     }
 
     /**
-     * Construct a new {@code Image} with the specified parameters.
+     * Constructs a new {@code Image} with the specified parameters.
      *
      * @param is the stream from which to load the image
      * @param requestedWidth the image's bounding box width
@@ -737,6 +738,17 @@ public class Image {
             throw new IllegalArgumentException("Image dimensions must be positive (w,h > 0)");
         }
         initialize(Toolkit.getToolkit().createPlatformImage(width, height));
+    }
+
+    /**
+     * Package private internal constructor used only by {@code WritableImage}.
+     *
+     * @param pixelBuffer the {@code PixelBuffer} used to construct this image.
+     */
+    Image(PixelBuffer pixelBuffer) {
+        this(null, null, pixelBuffer.getWidth(), pixelBuffer.getHeight(),
+                false, false, false);
+        initialize(pixelBuffer); // Creates an image using the java.nio.Buffer provided by PixelBuffer.
     }
 
     private Image(Object externalImage) {
@@ -774,9 +786,11 @@ public class Image {
      */
     void dispose() {
         cancel();
-        if (animation != null) {
-            animation.stop();
-        }
+        Platform.runLater(() -> {
+            if (animation != null) {
+                animation.stop();
+            }
+        });
     }
 
     private ImageTask backgroundTask;
@@ -833,6 +847,7 @@ public class Image {
 
     // Support for animated images.
     private Animation animation;
+    private volatile boolean isAnimated;
     // We keep the animation frames associated with the Image rather than with
     // the animation, so most of the data can be garbage collected while
     // the animation is still running.
@@ -853,8 +868,11 @@ public class Image {
         double h = loader.getHeight() / zeroFrame.getPixelScale();
         setPlatformImageWH(zeroFrame, w, h);
 
-        animation = new Animation(this, loader);
-        animation.start();
+        isAnimated = true;
+        Platform.runLater(() -> {
+            animation = new Animation(this, loader);
+            animation.start();
+        });
     }
 
     private static final class Animation {
@@ -1139,7 +1157,7 @@ public class Image {
      * Indicates whether image is animated.
      */
     boolean isAnimation() {
-        return animation != null;
+        return isAnimated;
     }
 
     boolean pixelsReadable() {
