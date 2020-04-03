@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -56,7 +56,11 @@ static NSMutableDictionary * keyCodeForCharMap = nil;
 static BOOL isEmbedded = NO;
 static BOOL disableSyncRendering = NO;
 
+#ifdef STATIC_BUILD
+jint JNICALL JNI_OnLoad_glass(JavaVM *vm, void *reserved)
+#else
 jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+#endif
 {
     pthread_key_create(&GlassThreadDataKey, NULL);
 
