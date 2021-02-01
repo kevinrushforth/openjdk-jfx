@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -159,6 +159,11 @@ public abstract class Window {
      * {@link com.sun.glass.ui.Application#supportsUnifiedWindows()}
      */
     @Native public static final int UNIFIED = 1 << 8;
+
+    /**
+     * Indicates that the window is modal which affects whether the window is minimizable.
+     */
+    @Native public static final int MODAL = 1 << 9;
 
     final static public class State {
         @Native public static final int NORMAL = 1;

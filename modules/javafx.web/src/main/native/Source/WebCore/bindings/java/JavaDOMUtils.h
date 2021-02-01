@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,7 +29,7 @@
 
 #include <wtf/RefPtr.h>
 #include <wtf/text/WTFString.h>
-#include <WebCore/ExceptionOr.h>
+#include "ExceptionOr.h"
 
 // Note that a pointer to a Node is not necessarily the same address
 // as a pointer to an Element: a static_cast between the two is not

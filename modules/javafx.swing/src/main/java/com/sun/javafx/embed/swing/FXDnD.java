@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,9 +42,7 @@ import com.sun.javafx.embed.swing.newimpl.FXDnDInteropN;
  * It allows Swing content to use the FX machinery for performing DnD.
  */
 final public class FXDnD {
-    private static SwingNode node;
     public static boolean fxAppThreadIsDispatchThread;
-    private SwingNode getNode() { return node; }
     private FXDnDInteropN fxdndiop;
 
     static {
@@ -59,7 +57,6 @@ final public class FXDnD {
     }
 
     public FXDnD(SwingNode node) {
-        this.node = node;
         fxdndiop = new FXDnDInteropN();
         fxdndiop.setNode(node);
     }
@@ -78,10 +75,16 @@ final public class FXDnD {
     }
 
     public void addDropTarget(DropTarget dt) {
-        fxdndiop.addDropTarget(dt, node);
+        SwingNode node = fxdndiop.getNode();
+        if (node != null) {
+            fxdndiop.addDropTarget(dt, node);
+        }
     }
 
     public void removeDropTarget(DropTarget dt) {
-        fxdndiop.removeDropTarget(dt, node);
+        SwingNode node = fxdndiop.getNode();
+        if (node != null) {
+            fxdndiop.removeDropTarget(dt, node);
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,7 @@ import javafx.beans.NamedArg;
  * <p>
  *     A class that defines a duration of time. Duration instances are immutable,
  *     and are therefore replaced rather than modified, similar to {@link java.math.BigDecimal}.
- *     Duration's can be created using the constructor, or one of the static construction
+ *     Durations can be created using the constructor, or one of the static construction
  *     methods such as {@link #seconds} or {@link #minutes}.
  * </p>
  * @since JavaFX 2.0

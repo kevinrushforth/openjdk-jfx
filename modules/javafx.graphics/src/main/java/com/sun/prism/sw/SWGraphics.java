@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -62,6 +62,7 @@ import com.sun.prism.impl.PrismSettings;
 import com.sun.prism.paint.Color;
 import com.sun.prism.paint.ImagePattern;
 import com.sun.prism.paint.Paint;
+import com.sun.javafx.font.CharToGlyphMapper;
 
 final class SWGraphics implements ReadbackGraphics {
 
@@ -632,8 +633,10 @@ final class SWGraphics implements ReadbackGraphics {
     private void drawGlyph(FontStrike strike, GlyphList gl, int idx, BaseTransform glyphTx,
                            boolean drawAsMasks, float x, float y)
     {
-
         final Glyph g = strike.getGlyph(gl.getGlyphCode(idx));
+        if (g.getGlyphCode() == CharToGlyphMapper.INVISIBLE_GLYPH_ID) {
+            return;
+        }
         if (drawAsMasks) {
             final Point2D pt = new Point2D((float)(x + tx.getMxt() + gl.getPosX(idx)),
                                            (float)(y + tx.getMyt() + gl.getPosY(idx)));

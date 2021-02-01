@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -455,9 +455,17 @@ static jint getSwipeDirFromEvent(NSEvent *theEvent)
     jdouble rotationY = 0.0;
     if (type == com_sun_glass_events_MouseEvent_WHEEL)
     {
-        rotationX = (jdouble)[theEvent scrollingDeltaX] * 0.1;
-        rotationY = (jdouble)[theEvent scrollingDeltaY] * 0.1;
-
+        if ([theEvent hasPreciseScrollingDeltas])
+        {
+            rotationX = (jdouble)[theEvent scrollingDeltaX] * 0.1;
+            rotationY = (jdouble)[theEvent scrollingDeltaY] * 0.1;
+        }
+        else
+        {
+            rotationX = (jdouble)[theEvent deltaX];
+            rotationY = (jdouble)[theEvent deltaY];
+        }
+        
         //XXX: check for equality for doubles???
         if (rotationX == 0.0 && rotationY == 0.0)
         {

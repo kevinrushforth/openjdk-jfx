@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1458,10 +1458,44 @@ public class VirtualFlow<T extends IndexedCell> extends Region {
         if (cell != null) {
             scrollTo(cell);
         } else {
+            // see JDK-8197536
+            if (tryScrollOneCell(index, true)) {
+                return;
+            } else if (tryScrollOneCell(index, false)) {
+                return;
+            }
+
             adjustPositionToIndex(index);
             addAllToPile();
             requestLayout();
         }
+    }
+
+    // will return true if scroll is successful
+    private boolean tryScrollOneCell(int targetIndex, boolean downOrRight) {
+        // if going down, cell diff is -1, because it will get the target cell index and check if previous
+        // cell is visible to base the position
+        int indexDiff = downOrRight ? -1 : 1;
+
+        T targetCell = getVisibleCell(targetIndex + indexDiff);
+        if (targetCell != null) {
+            T cell = getAvailableCell(targetIndex);
+            setCellIndex(cell, targetIndex);
+            resizeCell(cell);
+            setMaxPrefBreadth(Math.max(getMaxPrefBreadth(), getCellBreadth(cell)));
+            cell.setVisible(true);
+            if (downOrRight) {
+                cells.addLast(cell);
+                scrollPixels(getCellLength(cell));
+            } else {
+                // up or left
+                cells.addFirst(cell);
+                scrollPixels(-getCellLength(cell));
+            }
+            return true;
+        }
+
+        return false;
     }
 
     /**
