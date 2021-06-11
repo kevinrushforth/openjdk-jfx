@@ -33,10 +33,11 @@
 
 #if ENABLE(INPUT_TYPE_DATETIMELOCAL)
 
+#include "Decimal.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "InputTypeNames.h"
-#include <wtf/NeverDestroyed.h>
+#include "StepRange.h"
 
 namespace WebCore {
 
@@ -45,8 +46,9 @@ using namespace HTMLNames;
 static const int dateTimeLocalDefaultStep = 60;
 static const int dateTimeLocalDefaultStepBase = 0;
 static const int dateTimeLocalStepScaleFactor = 1000;
+static const StepRange::StepDescription dateTimeLocalStepDescription { dateTimeLocalDefaultStep, dateTimeLocalDefaultStepBase, dateTimeLocalStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger };
 
-const AtomicString& DateTimeLocalInputType::formControlType() const
+const AtomString& DateTimeLocalInputType::formControlType() const
 {
     return InputTypeNames::datetimelocal();
 }
@@ -70,26 +72,22 @@ ExceptionOr<void> DateTimeLocalInputType::setValueAsDate(double value) const
 
 StepRange DateTimeLocalInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
-    static NeverDestroyed<const StepRange::StepDescription> stepDescription(dateTimeLocalDefaultStep, dateTimeLocalDefaultStepBase, dateTimeLocalStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger);
-
+    ASSERT(element());
     const Decimal stepBase = parseToNumber(element()->attributeWithoutSynchronization(minAttr), 0);
     const Decimal minimum = parseToNumber(element()->attributeWithoutSynchronization(minAttr), Decimal::fromDouble(DateComponents::minimumDateTime()));
     const Decimal maximum = parseToNumber(element()->attributeWithoutSynchronization(maxAttr), Decimal::fromDouble(DateComponents::maximumDateTime()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->attributeWithoutSynchronization(stepAttr));
-    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, stepDescription);
+    const Decimal step = StepRange::parseStep(anyStepHandling, dateTimeLocalStepDescription, element()->attributeWithoutSynchronization(stepAttr));
+    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, dateTimeLocalStepDescription);
 }
 
-bool DateTimeLocalInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+Optional<DateComponents> DateTimeLocalInputType::parseToDateComponents(const StringView& source) const
 {
-    ASSERT(out);
-    unsigned end;
-    return out->parseDateTimeLocal(characters, length, 0, end) && end == length;
+    return DateComponents::fromParsingDateTimeLocal(source);
 }
 
-bool DateTimeLocalInputType::setMillisecondToDateComponents(double value, DateComponents* date) const
+Optional<DateComponents> DateTimeLocalInputType::setMillisecondToDateComponents(double value) const
 {
-    ASSERT(date);
-    return date->setMillisecondsSinceEpochForDateTimeLocal(value);
+    return DateComponents::fromMillisecondsSinceEpochForDateTimeLocal(value);
 }
 
 bool DateTimeLocalInputType::isDateTimeLocalField() const

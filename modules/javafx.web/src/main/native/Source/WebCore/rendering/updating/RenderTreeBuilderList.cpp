@@ -24,6 +24,8 @@
 #include "config.h"
 #include "RenderTreeBuilderList.h"
 
+#include "InlineIterator.h"
+#include "LineInlineHeaders.h"
 #include "RenderChildIterator.h"
 #include "RenderListMarker.h"
 #include "RenderMultiColumnFlow.h"
@@ -32,6 +34,15 @@
 
 namespace WebCore {
 
+// FIXME: This shouldn't need InlineIterator
+static bool generatesLineBoxesForInlineChild(RenderBlock& current, RenderObject* inlineObj)
+{
+    InlineIterator it(&current, inlineObj, 0);
+    while (!it.atEnd() && !requiresLineBox(it))
+        it.increment();
+    return !it.atEnd();
+}
+
 static RenderBlock* getParentOfFirstLineBox(RenderBlock& current, RenderObject& marker)
 {
     bool inQuirksMode = current.document().inQuirksMode();
@@ -39,7 +50,7 @@ static RenderBlock* getParentOfFirstLineBox(RenderBlock& current, RenderObject& 
         if (&child == &marker)
             continue;
 
-        if (child.isInline() && (!is<RenderInline>(child) || current.generatesLineBoxesForInlineChild(&child)))
+        if (child.isInline() && (!is<RenderInline>(child) || generatesLineBoxesForInlineChild(current, &child)))
             return &current;
 
         if (child.isFloating() || child.isOutOfFlowPositioned())
@@ -78,7 +89,7 @@ void RenderTreeBuilder::List::updateItemMarker(RenderListItem& listItemRenderer)
 {
     auto& style = listItemRenderer.style();
 
-    if (style.listStyleType() == NoneListStyle && (!style.listStyleImage() || style.listStyleImage()->errorOccurred())) {
+    if (style.listStyleType() == ListStyleType::None && (!style.listStyleImage() || style.listStyleImage()->errorOccurred())) {
         if (auto* marker = listItemRenderer.markerRenderer())
             m_builder.destroy(*marker);
         return;
@@ -115,7 +126,7 @@ void RenderTreeBuilder::List::updateItemMarker(RenderListItem& listItemRenderer)
         return;
 
     if (currentParent)
-        m_builder.attach(*newParent, m_builder.detach(*currentParent, *markerRenderer), firstNonMarkerChild(*newParent));
+        m_builder.attach(*newParent, m_builder.detach(*currentParent, *markerRenderer, RenderTreeBuilder::CanCollapseAnonymousBlock::No), firstNonMarkerChild(*newParent));
     else
         m_builder.attach(*newParent, WTFMove(newMarkerRenderer), firstNonMarkerChild(*newParent));
 

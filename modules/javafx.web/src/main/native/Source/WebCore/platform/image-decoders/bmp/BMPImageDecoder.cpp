@@ -53,10 +53,10 @@ void BMPImageDecoder::setData(SharedBuffer& data, bool allDataReceived)
 
     ScalableImageDecoder::setData(data, allDataReceived);
     if (m_reader)
-        m_reader->setData(&data);
+        m_reader->setData(*m_data);
 }
 
-ImageFrame* BMPImageDecoder::frameBufferAtIndex(size_t index)
+ScalableImageDecoderFrame* BMPImageDecoder::frameBufferAtIndex(size_t index)
 {
     if (index)
         return 0;
@@ -64,7 +64,7 @@ ImageFrame* BMPImageDecoder::frameBufferAtIndex(size_t index)
     if (m_frameBufferCache.isEmpty())
         m_frameBufferCache.grow(1);
 
-    ImageFrame* buffer = &m_frameBufferCache.first();
+    auto* buffer = &m_frameBufferCache.first();
     if (!buffer->isComplete())
         decode(false, isAllDataReceived());
     return buffer;
@@ -98,8 +98,8 @@ bool BMPImageDecoder::decodeHelper(bool onlySize)
         return false;
 
     if (!m_reader) {
-        m_reader = std::make_unique<BMPImageReader>(this, m_decodedOffset, imgDataOffset, false);
-        m_reader->setData(m_data.get());
+        m_reader = makeUnique<BMPImageReader>(this, m_decodedOffset, imgDataOffset, false);
+        m_reader->setData(*m_data);
     }
 
     if (!m_frameBufferCache.isEmpty())

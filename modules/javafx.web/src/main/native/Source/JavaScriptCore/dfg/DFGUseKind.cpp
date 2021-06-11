@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,8 +27,6 @@
 #include "DFGUseKind.h"
 
 #if ENABLE(DFG_JIT)
-
-#include "JSCInlines.h"
 
 namespace WTF {
 
@@ -97,23 +95,32 @@ void printInternal(PrintStream& out, UseKind useKind)
     case RegExpObjectUse:
         out.print("RegExpObject");
         return;
+    case PromiseObjectUse:
+        out.print("PromiseObject");
+        return;
     case ProxyObjectUse:
         out.print("ProxyObject");
         return;
     case DerivedArrayUse:
         out.print("DerivedArray");
         return;
+    case DateObjectUse:
+        out.print("DateObject");
+        return;
     case MapObjectUse:
-        out.print("MapObjectUse");
+        out.print("MapObject");
         return;
     case SetObjectUse:
-        out.print("SetObjectUse");
+        out.print("SetObject");
         return;
     case WeakMapObjectUse:
-        out.print("WeakMapObjectUse");
+        out.print("WeakMapObject");
         return;
     case WeakSetObjectUse:
-        out.print("WeakSetObjectUse");
+        out.print("WeakSetObject");
+        return;
+    case DataViewObjectUse:
+        out.print("DataViewObject");
         return;
     case ObjectOrOtherUse:
         out.print("ObjectOrOther");
@@ -136,6 +143,15 @@ void printInternal(PrintStream& out, UseKind useKind)
     case SymbolUse:
         out.print("Symbol");
         return;
+    case AnyBigIntUse:
+        out.print("AnyBigInt");
+        return;
+    case HeapBigIntUse:
+        out.print("HeapBigInt");
+        return;
+    case BigInt32Use:
+        out.print("BigInt32");
+        return;
     case StringObjectUse:
         out.print("StringObject");
         return;
@@ -150,6 +166,12 @@ void printInternal(PrintStream& out, UseKind useKind)
         return;
     case NotCellUse:
         out.print("NotCell");
+        return;
+    case NotCellNorBigIntUse:
+        out.print("NotCellNorBigInt");
+        return;
+    case KnownOtherUse:
+        out.print("KnownOther");
         return;
     case OtherUse:
         out.print("Other");

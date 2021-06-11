@@ -27,55 +27,71 @@
 #include "config.h"
 #include "FetchBodySource.h"
 
-#if ENABLE(STREAMS_API)
-
 #include "FetchResponse.h"
 
 namespace WebCore {
 
 FetchBodySource::FetchBodySource(FetchBodyOwner& bodyOwner)
-    : m_bodyOwner(bodyOwner)
+    : m_bodyOwner(&bodyOwner)
 {
 }
 
 void FetchBodySource::setActive()
 {
-    m_bodyOwner.setPendingActivity(&m_bodyOwner);
+    ASSERT(m_bodyOwner);
+    ASSERT(!m_pendingActivity);
+    if (m_bodyOwner)
+        m_pendingActivity = m_bodyOwner->makePendingActivity(*m_bodyOwner);
 }
 
 void FetchBodySource::setInactive()
 {
-    m_bodyOwner.unsetPendingActivity(&m_bodyOwner);
+    ASSERT(m_bodyOwner);
+    ASSERT(m_pendingActivity);
+    m_pendingActivity = nullptr;
 }
 
 void FetchBodySource::doStart()
 {
-    m_bodyOwner.consumeBodyAsStream();
+    ASSERT(m_bodyOwner);
+    if (m_bodyOwner)
+        m_bodyOwner->consumeBodyAsStream();
 }
 
 void FetchBodySource::doPull()
 {
-    m_bodyOwner.feedStream();
+    ASSERT(m_bodyOwner);
+    if (m_bodyOwner)
+        m_bodyOwner->feedStream();
 }
 
 void FetchBodySource::doCancel()
 {
     m_isCancelling = true;
-    m_bodyOwner.cancel();
+    ASSERT(m_bodyOwner || m_isClosed);
+    if (!m_bodyOwner)
+        return;
+
+    m_bodyOwner->cancel();
+    m_bodyOwner = nullptr;
 }
 
 void FetchBodySource::close()
 {
+#if ASSERT_ENABLED
+    m_isClosed = true;
+#endif
+
     controller().close();
     clean();
+    m_bodyOwner = nullptr;
 }
 
-void FetchBodySource::error(const String& value)
+void FetchBodySource::error(const Exception& value)
 {
     controller().error(value);
     clean();
+    m_bodyOwner = nullptr;
 }
 
 } // namespace WebCore
-
-#endif // ENABLE(STREAMS_API)

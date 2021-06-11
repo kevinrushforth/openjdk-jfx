@@ -26,10 +26,14 @@
 
 #pragma once
 
+#include "CSSValue.h"
+#include "ComputedEffectTiming.h"
+#include "RenderStyle.h"
 #include "WebAnimation.h"
 #include <wtf/Forward.h>
 #include <wtf/HashMap.h>
-#include <wtf/HashSet.h>
+#include <wtf/ListHashSet.h>
+#include <wtf/Markable.h>
 #include <wtf/Optional.h>
 #include <wtf/Ref.h>
 #include <wtf/RefCounted.h>
@@ -37,46 +41,54 @@
 
 namespace WebCore {
 
-class AnimationEffect;
+class CSSAnimation;
+class CSSTransition;
+class DeclarativeAnimation;
 class Element;
-class WebAnimation;
 
-class AnimationTimeline : public RefCounted<AnimationTimeline> {
+class AnimationTimeline : public RefCounted<AnimationTimeline>, public CanMakeWeakPtr<AnimationTimeline> {
 public:
-    bool isDocumentTimeline() const { return m_classType == DocumentTimelineClass; }
-    void addAnimation(Ref<WebAnimation>&&);
-    void removeAnimation(Ref<WebAnimation>&&);
-    std::optional<double> bindingsCurrentTime();
-    virtual std::optional<Seconds> currentTime() { return m_currentTime; }
-    WEBCORE_EXPORT void setCurrentTime(Seconds);
-    WEBCORE_EXPORT String description();
-    WEBCORE_EXPORT virtual void pause() { };
-
-    virtual void animationTimingModelDidChange() { };
-
-    const HashSet<RefPtr<WebAnimation>>& animations() const { return m_animations; }
-    Vector<RefPtr<WebAnimation>> animationsForElement(Element&);
-    void animationWasAddedToElement(WebAnimation&, Element&);
-    void animationWasRemovedFromElement(WebAnimation&, Element&);
-
     virtual ~AnimationTimeline();
 
+    virtual bool isDocumentTimeline() const { return false; }
+
+    const AnimationCollection& relevantAnimations() const { return m_animations; }
+
+    void forgetAnimation(WebAnimation*);
+    virtual void animationTimingDidChange(WebAnimation&);
+    virtual void removeAnimation(WebAnimation&);
+
+    Optional<double> bindingsCurrentTime();
+    virtual Optional<Seconds> currentTime() { return m_currentTime; }
+
+    enum class Ordering : uint8_t { Sorted, Unsorted };
+    Vector<RefPtr<WebAnimation>> animationsForElement(Element&, Ordering = Ordering::Unsorted) const;
+
+    void elementWasRemoved(Element&);
+
+    void willChangeRendererForElement(Element&);
+    void cancelDeclarativeAnimationsForElement(Element&, WebAnimation::Silently);
+
+    virtual void animationWasAddedToElement(WebAnimation&, Element&);
+    virtual void animationWasRemovedFromElement(WebAnimation&, Element&);
+
+    void removeDeclarativeAnimationFromListsForOwningElement(WebAnimation&, Element&);
+
+    void updateCSSAnimationsForElement(Element&, const RenderStyle* currentStyle, const RenderStyle& afterChangeStyle);
+    void updateCSSTransitionsForElement(Element&, const RenderStyle& currentStyle, const RenderStyle& newStyle);
+
 protected:
-    enum ClassType {
-        DocumentTimelineClass
-    };
+    explicit AnimationTimeline();
 
-    ClassType classType() const { return m_classType; }
-
-    explicit AnimationTimeline(ClassType);
-
-    const HashMap<RefPtr<Element>, Vector<RefPtr<WebAnimation>>>& elementToAnimationsMap() { return m_elementToAnimationsMap; }
+    Vector<WeakPtr<WebAnimation>> m_allAnimations;
+    AnimationCollection m_animations;
 
 private:
-    ClassType m_classType;
-    std::optional<Seconds> m_currentTime;
-    HashMap<RefPtr<Element>, Vector<RefPtr<WebAnimation>>> m_elementToAnimationsMap;
-    HashSet<RefPtr<WebAnimation>> m_animations;
+    void updateGlobalPosition(WebAnimation&);
+    void updateCSSTransitionsForElementAndProperty(Element&, CSSPropertyID, const RenderStyle& currentStyle, const RenderStyle& afterChangeStyle, const MonotonicTime);
+    void removeCSSAnimationCreatedByMarkup(Element&, CSSAnimation&);
+
+    Markable<Seconds, Seconds::MarkableTraits> m_currentTime;
 };
 
 } // namespace WebCore

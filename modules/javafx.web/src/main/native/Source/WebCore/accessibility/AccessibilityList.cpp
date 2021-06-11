@@ -32,6 +32,7 @@
 #include "AXObjectCache.h"
 #include "HTMLElement.h"
 #include "HTMLNames.h"
+#include "HTMLParserIdioms.h"
 #include "PseudoElement.h"
 #include "RenderListItem.h"
 #include "RenderObject.h"
@@ -116,7 +117,7 @@ bool AccessibilityList::childHasPseudoVisibleListItemMarkers(RenderObject* listI
 
     // Platforms which expose rendered text content through the parent element will treat
     // those renderers as "ignored" objects.
-#if PLATFORM(GTK)
+#if USE(ATK)
     String text = axObj->textUnderElement();
     return !text.isEmpty() && !text.isAllSpecialCharacters<isHTMLSpace>();
 #else
@@ -163,7 +164,7 @@ AccessibilityRole AccessibilityList::determineAccessibilityRole()
 
             // Rendered list items always count.
             if (listItem->isListItem()) {
-                if (!hasVisibleMarkers && (listItem->style().listStyleType() != NoneListStyle || listItem->style().listStyleImage() || childHasPseudoVisibleListItemMarkers(listItem)))
+                if (!hasVisibleMarkers && (listItem->style().listStyleType() != ListStyleType::None || listItem->style().listStyleImage() || childHasPseudoVisibleListItemMarkers(listItem)))
                     hasVisibleMarkers = true;
                 listItemCount++;
             } else if (listItem->node() && listItem->node()->hasTagName(liTag)) {

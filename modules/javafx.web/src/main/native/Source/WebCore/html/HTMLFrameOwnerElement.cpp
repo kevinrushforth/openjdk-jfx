@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2006-2019 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,17 +25,19 @@
 #include "Frame.h"
 #include "FrameLoader.h"
 #include "RenderWidget.h"
+#include "ScriptController.h"
 #include "ShadowRoot.h"
 #include "SVGDocument.h"
 #include "StyleTreeResolver.h"
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/Ref.h>
 
 namespace WebCore {
 
+WTF_MAKE_ISO_ALLOCATED_IMPL(HTMLFrameOwnerElement);
+
 HTMLFrameOwnerElement::HTMLFrameOwnerElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
-    , m_contentFrame(nullptr)
-    , m_sandboxFlags(SandboxNone)
 {
 }
 
@@ -66,7 +68,7 @@ void HTMLFrameOwnerElement::clearContentFrame()
     if (!m_contentFrame)
         return;
 
-    m_contentFrame = 0;
+    m_contentFrame = nullptr;
 
     for (RefPtr<ContainerNode> node = this; node; node = node->parentOrShadowHostNode())
         node->decrementConnectedSubframeCount();
@@ -74,12 +76,7 @@ void HTMLFrameOwnerElement::clearContentFrame()
 
 void HTMLFrameOwnerElement::disconnectContentFrame()
 {
-    // FIXME: Currently we don't do this in removedFrom because this causes an
-    // unload event in the subframe which could execute script that could then
-    // reach up into this document and then attempt to look back down. We should
-    // see if this behavior is really needed as Gecko does not allow this.
-    if (RefPtr<Frame> frame = contentFrame()) {
-        Ref<Frame> protect(*frame);
+    if (RefPtr<Frame> frame = m_contentFrame) {
         frame->loader().frameDetached();
         frame->disconnectOwnerElement();
     }
@@ -96,9 +93,9 @@ Document* HTMLFrameOwnerElement::contentDocument() const
     return m_contentFrame ? m_contentFrame->document() : nullptr;
 }
 
-DOMWindow* HTMLFrameOwnerElement::contentWindow() const
+WindowProxy* HTMLFrameOwnerElement::contentWindow() const
 {
-    return m_contentFrame ? m_contentFrame->document()->domWindow() : nullptr;
+    return m_contentFrame ? &m_contentFrame->windowProxy() : nullptr;
 }
 
 void HTMLFrameOwnerElement::setSandboxFlags(SandboxFlags flags)
@@ -106,7 +103,7 @@ void HTMLFrameOwnerElement::setSandboxFlags(SandboxFlags flags)
     m_sandboxFlags = flags;
 }
 
-bool HTMLFrameOwnerElement::isKeyboardFocusable(KeyboardEvent& event) const
+bool HTMLFrameOwnerElement::isKeyboardFocusable(KeyboardEvent* event) const
 {
     return m_contentFrame && HTMLElement::isKeyboardFocusable(event);
 }
@@ -129,6 +126,20 @@ void HTMLFrameOwnerElement::scheduleInvalidateStyleAndLayerComposition()
         });
     } else
         invalidateStyleAndLayerComposition();
+}
+
+bool HTMLFrameOwnerElement::isProhibitedSelfReference(const URL& completeURL) const
+{
+    // We allow one level of self-reference because some websites depend on that, but we don't allow more than one.
+    bool foundOneSelfReference = false;
+    for (auto* frame = document().frame(); frame; frame = frame->tree().parent()) {
+        if (equalIgnoringFragmentIdentifier(frame->document()->url(), completeURL)) {
+            if (foundOneSelfReference)
+                return true;
+            foundOneSelfReference = true;
+        }
+    }
+    return false;
 }
 
 bool SubframeLoadingDisabler::canLoadFrame(HTMLFrameOwnerElement& owner)

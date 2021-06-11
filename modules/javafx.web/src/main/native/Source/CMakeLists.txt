@@ -7,9 +7,13 @@ endif ()
 
 add_subdirectory(WTF)
 
+if (USE_CAPSTONE)
+    add_subdirectory(ThirdParty/capstone)
+endif ()
+
 add_subdirectory(JavaScriptCore)
 
-if (WIN32 AND ENABLE_GRAPHICS_CONTEXT_3D)
+if (ENABLE_GRAPHICS_CONTEXT_GL)
     add_subdirectory(ThirdParty/ANGLE)
 endif ()
 
@@ -17,12 +21,16 @@ if (ENABLE_API_TESTS)
     add_subdirectory(ThirdParty/gtest)
 endif ()
 
-if (USE_OPENVR)
-    add_subdirectory(ThirdParty/openvr)
-endif ()
-
 if (USE_XDGMIME)
     add_subdirectory(ThirdParty/xdgmime)
+endif ()
+
+if (USE_LIBWEBRTC)
+    add_subdirectory(ThirdParty/libwebrtc)
+endif ()
+
+if (ENABLE_WEBINSPECTORUI)
+    add_subdirectory(WebInspectorUI)
 endif ()
 
 if (ENABLE_WEBCORE)

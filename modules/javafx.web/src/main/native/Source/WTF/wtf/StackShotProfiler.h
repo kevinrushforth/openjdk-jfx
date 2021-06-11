@@ -25,7 +25,6 @@
 
 #pragma once
 
-#include <wtf/CurrentTime.h>
 #include <wtf/DataLog.h>
 #include <wtf/Locker.h>
 #include <wtf/ProcessID.h>
@@ -38,6 +37,7 @@
 namespace WTF {
 
 class StackShotProfiler {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     StackShotProfiler(unsigned numFrames, unsigned framesToSkip, unsigned stacksToReport)
         : m_numFrames(numFrames)

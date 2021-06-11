@@ -410,6 +410,17 @@ ext.IS_RETAIN_PACKAGER_TESTS = Boolean.parseBoolean(RETAIN_PACKAGER_TESTS)
 defineProperty("TEST_PACKAGER_DMG", "false")
 ext.IS_TEST_PACKAGER_DMG = Boolean.parseBoolean(TEST_PACKAGER_DMG)
 
+defineProperty("STATIC_BUILD", "false")
+ext.IS_STATIC_BUILD = Boolean.parseBoolean(STATIC_BUILD)
+
+if (IS_STATIC_BUILD && IS_COMPILE_MEDIA) {
+    throw new GradleException("Can not have COMPILE_MEDIA when STATIC_BUILD is enabled");
+}
+
+// BUILD_TOOLS_DOWNLOAD_SCRIPT specifies a path of a gradle script which downloads
+// required build tools.
+defineProperty("BUILD_TOOLS_DOWNLOAD_SCRIPT", "")
+
 // Define the SWT.jar that we are going to have to download during the build process based
 // on what platform we are compiling from (not based on our target).
 ext.SWT_FILE_NAME = IS_MAC ? "org.eclipse.swt.cocoa.macosx.x86_64_3.105.3.v20170228-0512" :
@@ -619,7 +630,7 @@ if (!project.hasProperty("jdkRuntimeVersion")) throw new Exception("Unable to de
 
 // Determine whether the javafx.* modules are present in the JDK. To do this,
 // we will execute "java --list-modules" and search for javafx.base.
-// Also, check if jdk.unsupported.desktop module is present in JDK to ensure 
+// Also, check if jdk.unsupported.desktop module is present in JDK to ensure
 // javafx.swing do not use internal JDK classes directly.
 ext.HAS_JAVAFX_MODULES = false;
 ext.HAS_UNSUPPORTED_DESKTOP = false;
@@ -705,7 +716,7 @@ void fetchExternalTools(String configName, List packages, File destdir, boolean 
                 def String basename = pkgname.substring(0,pkgname.lastIndexOf("."))
                 def File pkgdir = file("$destdir/$basename")
 
-                if (pkgname.endsWith(".tgz")) {
+                if (pkgname.endsWith(".tgz") || pkgname.endsWith("tar.gz")) {
                     if (IS_LINUX || IS_MAC) {
                         // use native tar to support symlinks
                         pkgdir.mkdirs()
@@ -727,7 +738,7 @@ void fetchExternalTools(String configName, List packages, File destdir, boolean 
                 } else {
                     throw new GradleException("Unhandled package type for compile package ${pkgname}")
                 }
-                srcball.deleteOnExit();
+                srcball.delete();
             }
         } else {
             logger.quiet "all tool packages are present $packages"
@@ -777,7 +788,8 @@ void ant(String conf,   // platform configuration
                     "INCLUDE"              : WINDOWS_VS_INCLUDE,
                     "LIB"                  : WINDOWS_VS_LIB,
                     "LIBPATH"              : WINDOWS_VS_LIBPATH,
-                    "DXSDK_DIR"            : WINDOWS_DXSDK_DIR
+                    "DXSDK_DIR"            : WINDOWS_DXSDK_DIR,
+                    "PATH"                 : WINDOWS_VS_PATH
             ]);
             commandLine "cmd", "/c", ant, "-Dbuild.compiler=javac1.7"
         } else {
@@ -1105,6 +1117,11 @@ void commonModuleSetup(Project p, List<String> moduleChain) {
     }
 }
 
+if (BUILD_TOOLS_DOWNLOAD_SCRIPT != "") {
+    println "Include build tools download script:${BUILD_TOOLS_DOWNLOAD_SCRIPT}"
+    apply from: BUILD_TOOLS_DOWNLOAD_SCRIPT
+}
+
 // Now we need to define the native compilation tasks. The set of parameters to
 // native compilation depends on the target platform (and also to some extent what platform
 // you are compiling on). These settings are contained in various gradle files
@@ -1228,14 +1245,17 @@ if (Integer.parseInt(NUM_COMPILE_THREADS.toString()) < 1) {
     NUM_COMPILE_THREADS = 1
 }
 
-// Check for Gradle 4.8, error if < 4.3.
-if (gradle.gradleVersion != "4.8") {
+// Check gradle version
+if (gradle.gradleVersion != jfxGradleVersion) {
     def ver = gradle.gradleVersion.split("[\\.]");
+    def verMin = jfxGradleVersionMin.split("[\\.]");
     def gradleMajor = Integer.parseInt(ver[0]);
     def gradleMinor = Integer.parseInt(ver[1].split("[^0-9]")[0]);
+    def gradleMajorMin = Integer.parseInt(verMin[0]);
+    def gradleMinorMin = Integer.parseInt(verMin[1].split("[^0-9]")[0]);
     def err = "";
-    if (gradleMajor < 4 || (gradleMajor == 4 && gradleMinor < 3)) {
-        err = "Gradle version too old: ${gradle.gradleVersion}; must be at least 4.3"
+    if (gradleMajor < gradleMajorMin || (gradleMajor == gradleMajorMin && gradleMinor < gradleMinorMin)) {
+        err = "Gradle version too old: ${gradle.gradleVersion}; must be at least ${jfxGradleVersionMin}"
     }
 
     if (IS_GRADLE_VERSION_CHECK && err != "") {
@@ -1244,7 +1264,7 @@ if (gradle.gradleVersion != "4.8") {
 
     logger.warn("*****************************************************************");
     logger.warn("Unsupported gradle version $gradle.gradleVersion in use.");
-    logger.warn("Only version 4.8 is supported. Use this version at your own risk");
+    logger.warn("Only version $jfxGradleVersion is supported. Use this version at your own risk");
     if ( err != "") logger.warn(err);
     logger.warn("*****************************************************************");
 }
@@ -1304,6 +1324,18 @@ logger.quiet("jdk version: ${jdkVersion}")
 logger.quiet("jdk build number: ${jdkBuildNumber}")
 logger.quiet("minimum jdk version: ${jfxBuildJdkVersionMin}")
 logger.quiet("minimum jdk build number: ${jfxBuildJdkBuildnumMin}")
+
+if (IS_LINUX) {
+    logger.quiet("GCC version: ${jfxBuildLinuxGccVersion}")
+} else if (IS_WINDOWS) {
+    logger.quiet("MSVC version: ${jfxBuildWindowsMsvcVersion}")
+} else if (IS_MAC) {
+    logger.quiet("XCODE version: ${jfxBuildMacosxXcodeVersion}")
+}
+logger.quiet("cmake version: ${jfxBuildCmakeVersion}")
+logger.quiet("ninja version: ${jfxBuildNinjaVersion}")
+logger.quiet("ant version: ${jfxBuildAntVersion}")
+
 logger.quiet("HAS_JAVAFX_MODULES: $HAS_JAVAFX_MODULES")
 logger.quiet("HAS_UNSUPPORTED_DESKTOP: $HAS_UNSUPPORTED_DESKTOP")
 logger.quiet("STUB_RUNTIME: $STUB_RUNTIME")
@@ -1576,9 +1608,11 @@ void addMavenPublication(Project project, List<String> projectDependencies) {
                 maven(MavenPublication) {
                     artifactId = "javafx-${project.name}"
 
-                    artifact project.tasks."moduleEmptyPublicationJar$t.capital"
-                    artifact project.tasks."modularPublicationJar$t.capital" {
-                        classifier "$t.name"
+                    afterEvaluate {
+                        artifact project.tasks."moduleEmptyPublicationJar$t.capital"
+                        artifact project.tasks."modularPublicationJar$t.capital" {
+                            classifier "$t.name"
+                        }
                     }
 
                     pom.withXml {
@@ -1742,7 +1776,7 @@ allprojects {
         repositories {
             mavenCentral()
             ivy {
-                url "http://download.eclipse.org/eclipse/updates/4.6/R-4.6.3-201703010400/plugins/"
+                url "https://download.eclipse.org/eclipse/updates/4.6/R-4.6.3-201703010400/plugins/"
                 layout "pattern", {
                     artifact "[artifact].[ext]"
                 }
@@ -1941,7 +1975,7 @@ project(":graphics") {
     dependencies {
         stubCompile group: "junit", name: "junit", version: "4.8.2"
 
-        antlr group: "org.antlr", name: "antlr-complete", version: "3.5.2"
+        antlr group: "org.antlr", name: "antlr4", version: "4.7.2", classifier: "complete"
     }
 
     project.ext.moduleSourcePath = defaultModuleSourcePath_GraphicsOne
@@ -1992,14 +2026,14 @@ project(":graphics") {
         executable = JAVA
         classpath = project.configurations.antlr
         workingDir = wd
-        main = "org.antlr.Tool"
+        main = "org.antlr.v4.Tool"
 
         args = [
-            "-Xconversiontimeout",
-            "30000",
             "-o",
             "$buildDir/gensrc/antlr",
-            "com/sun/scenario/effect/compiler/JSL.g" ]
+            "-package",
+            "com.sun.scenario.effect.compiler",
+            "com/sun/scenario/effect/compiler/JSL.g4" ]
 
         inputs.dir wd
         outputs.dir file("$buildDir/gensrc/antlr")
@@ -2320,7 +2354,7 @@ project(":graphics") {
             libsDir.mkdirs();
 
             def allLibsPresent = true
-            def libNames = [ "antlr-complete-3.5.2.jar" ]
+            def libNames = [ "antlr4-4.7.2-complete.jar" ]
             libNames.each { name ->
                 File f = new File(libsDir, name)
                 if (!f.exists()) allLibsPresent = false
@@ -2331,7 +2365,7 @@ project(":graphics") {
                 copy {
                     into libsDir
                     from f.getParentFile()
-                    include "**/antlr-complete-3.5.2.jar"
+                    include "**/antlr4-4.7.2-complete.jar"
                     includeEmptyDirs = false
                 }
             }
@@ -2416,14 +2450,28 @@ project(":swing") {
 
     sourceSets {
         main
-        //shims // no test shims needed
-        test
+        shims {
+            java {
+                compileClasspath += sourceSets.main.output
+                runtimeClasspath += sourceSets.main.output
+            }
+        }
+        test {
+            java {
+                compileClasspath += sourceSets.shims.output
+                runtimeClasspath += sourceSets.shims.output
+            }
+        }
     }
 
     project.ext.moduleSourcePath = defaultModuleSourcePath
     project.ext.moduleSourcePathShim = defaultModuleSourcePathShim
 
     commonModuleSetup(project, [ 'base', 'graphics', 'swing' ])
+
+    sourceSets.shims.java {
+        exclude("com/sun/javafx/embed/swing/oldimpl/**")
+    }
 
     dependencies {
     }
@@ -3195,6 +3243,7 @@ project(":media") {
             media name: "libav-11.4", ext: "tar.gz"
             media name: "libav-12.1", ext: "tar.gz"
             media name: "ffmpeg-3.3.3", ext: "tar.gz"
+            media name: "ffmpeg-4.0.2", ext: "tar.gz"
         }
     }
 
@@ -3323,15 +3372,7 @@ project(":media") {
                              "CC=${mediaProperties.compiler}", "AR=${mediaProperties.ar}", "LINKER=${mediaProperties.linker}")
 
                         if (t.name == "win") {
-                            Map winEnv = new HashMap(WINDOWS_NATIVE_COMPILE_ENVIRONMENT)
-
-                            String sdkDir = System.getenv("BASECLASSES_SDK_DIR");
-                            if (sdkDir == null) {
-                                sdkDir = "C:/Program Files/Microsoft SDKs/Windows/v7.1" // Default value
-                                winEnv["BASECLASSES_SDK_DIR"] = sdkDir
-                            }
-                            environment(winEnv)
-
+                            environment(WINDOWS_NATIVE_COMPILE_ENVIRONMENT)
                             args("RESOURCE=${nativeOutputDir}/${buildType}/${WIN.media.fxpluginsRcFile}")
                         }
                     }
@@ -3363,7 +3404,7 @@ project(":media") {
                                                      "cpu_internal.h", "intfloat.h", "opt.h", "version.h", "avutil.h",
                                                      "crc.h", "intreadwrite.h", "parseutils.h", "xtea.h", "base64.h",
                                                      "dict.h", "lfg.h", "pixdesc.h", "intfloat_readwrite.h", "old_pix_fmts.h", "audioconvert.h",
-                                                     "cpu.h")
+                                                     "cpu.h", "hwcontext.h")
                     FileCollection libavutil_x86 = files("cpu.h") // Use cpu.h from x86 instead of libavutil root if exist
                     FileCollection libswscale = files("swscale.h", "version.h")
 
@@ -3545,8 +3586,8 @@ project(":media") {
                     doLast {
                         project.ext.libav = [:]
                         project.ext.libav.basedir = "${buildDir}/native/linux/ffmpeg"
-                        project.ext.libav.versions = [ "3.3.3" ]
-                        project.ext.libav.versionmap = [ "3.3.3" : "57" ]
+                        project.ext.libav.versions = [ "3.3.3", "4.0.2" ]
+                        project.ext.libav.versionmap = [ "3.3.3" : "57", "4.0.2" : "58" ]
 
                         libav.versions.each { version ->
                             def libavDir = "${libav.basedir}/ffmpeg-${version}"
@@ -3565,13 +3606,28 @@ project(":media") {
                             def libavDir = "${libav.basedir}/ffmpeg-${version}"
                             File dir = file(libavDir)
                             if (dir.exists()) {
-                                def configFile = "${libav.basedir}/ffmpeg-${version}/config.h"
+                                def configFile = "${libavDir}/config.h"
                                 File cfgFile = file(configFile)
                                 if (!cfgFile.exists()) {
                                     // Add execute permissions to version.sh, otherwise build fails
-                                    exec {
-                                        workingDir("$libavDir")
-                                        commandLine("chmod", "+x", "version.sh")
+                                    def versionFile = "${libavDir}/version.sh"
+                                    File verFile = file(versionFile)
+                                    if (verFile.exists()) {
+                                        exec {
+                                            workingDir("$libavDir")
+                                            commandLine("chmod", "+x", "version.sh")
+                                        }
+                                    } else {
+                                        versionFile = "${libavDir}/ffbuild/version.sh"
+                                        verFile = file(versionFile)
+                                        if (verFile.exists()) {
+                                            exec {
+                                                workingDir("${libavDir}/ffbuild")
+                                                commandLine("chmod")
+                                                args += "+x"
+                                                args += ["version.sh", "libversion.sh", "pkgconfig_generate.sh"]
+                                            }
+                                        }
                                     }
                                     exec {
                                         workingDir("$libavDir")
@@ -3611,7 +3667,7 @@ project(":media") {
                             project.ext.libav.libavffmpeg.versions = [ "56" ]
                             project.ext.libav.ffmpeg = [:]
                             project.ext.libav.ffmpeg.basedir = "${buildDir}/native/linux/ffmpeg/ffmpeg"
-                            project.ext.libav.ffmpeg.versions = [ "57" ]
+                            project.ext.libav.ffmpeg.versions = [ "57", "58" ]
 
                             project.ext.libav.versions.each { version ->
                                 def libavDir = "${project.ext.libav.basedir}-${version}"
@@ -3861,26 +3917,17 @@ project(":web") {
                 exec {
                     workingDir("$webkitOutputDir")
                     def cmakeArgs = "-DENABLE_TOOLS=1"
+                    if (IS_STATIC_BUILD) {
+                        cmakeArgs = " $cmakeArgs -DSTATIC_BUILD=1 -DUSE_THIN_ARCHIVES=OFF";
+                    }
+                    cmakeArgs = " $cmakeArgs -DCMAKE_C_COMPILER='${webkitProperties.compiler}'"
                     if (t.name == "win") {
-                        String parfaitPath = IS_COMPILE_PARFAIT ? System.getenv().get("PARFAIT_PATH") + ";" : "";
-                        Map environmentSettings = new HashMap(WINDOWS_NATIVE_COMPILE_ENVIRONMENT)
-                        environmentSettings["PATH"] = parfaitPath + "$WINDOWS_VS_PATH"
-                        /* To build with ICU:
-                        1. Download http://javaweb.us.oracle.com/jcg/fx-webrevs/RT-17164/WebKitLibrariesICU.zip
-                        and unzip it to WebKitLibraries folder.
-                        2. Copy DLLs from
-                        WebKitLibrariesICU.zip\WebKitLibraries\import\runtime
-                        to %windir%\system32
-                        3. Uncomment the line below
-                         */
-                        // args("--icu-unicode")
-
                         // To enable ninja build on Windows
-                        environment(WINDOWS_NATIVE_COMPILE_ENVIRONMENT + ['CC' : 'cl', 'CXX' : 'cl'])
+                        environment(WINDOWS_NATIVE_COMPILE_ENVIRONMENT)
                     } else if (t.name == "mac") {
-                        cmakeArgs = "-DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_MIN_VERSION -DCMAKE_OSX_SYSROOT=$MACOSX_SDK_PATH"
+                        cmakeArgs = " $cmakeArgs -DCMAKE_OSX_DEPLOYMENT_TARGET=$MACOSX_MIN_VERSION -DCMAKE_OSX_SYSROOT=$MACOSX_SDK_PATH"
                     } else if (t.name == "linux") {
-                        cmakeArgs = "-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_C_COMPILER=${webkitProperties.compiler}"
+                        cmakeArgs = " $cmakeArgs -DCMAKE_SYSTEM_NAME=Linux"
                         if (IS_64) {
                             cmakeArgs = "$cmakeArgs -DCMAKE_SYSTEM_PROCESSOR=x86_64"
                         } else {
@@ -3889,6 +3936,9 @@ project(":web") {
                         // TODO: Use cflags and ldflags from all platforms
                         def cFlags = webkitProperties.ccFlags?.join(' ') ?: ''
                         def lFlags = webkitProperties.linkFlags?.join(' ') ?: ''
+                        if (IS_STATIC_BUILD) {
+                            cFlags = " $cFlags -DSTATIC_BUILD=1";
+                        }
                         // -shared flag should be omitted while creating executable.
                         def exeFlags = webkitProperties.linkFlags?.join(' ')?.replace('-shared', '') ?: ''
                         cmakeArgs = "$cmakeArgs -DCMAKE_C_FLAGS='${cFlags}' -DCMAKE_CXX_FLAGS='${cFlags}'"
@@ -3901,7 +3951,12 @@ project(":web") {
                         environment([
                             "COMPILE_PARFAIT" : "true"
                         ])
+                        environment "PATH", System.env.PARFAIT_PATH + File.pathSeparator + environment.PATH
                         cmakeArgs = "-DCMAKE_C_COMPILER=parfait-gcc -DCMAKE_CXX_COMPILER=parfait-g++"
+                    }
+
+                    if (project.hasProperty('toolsPath')) {
+                        environment "PATH", toolsPath + File.pathSeparator + environment.PATH
                     }
 
                     environment([
@@ -3919,7 +3974,7 @@ project(":web") {
                     cmakeArgs += " -DJAVAFX_RELEASE_VERSION=${jfxReleaseMajorVersion}"
                     commandLine("perl", "$projectDir/src/main/native/Tools/Scripts/build-webkit",
                         "--java", "--icu-unicode", targetCpuBitDepthSwitch,
-                        "--cmakeargs=${cmakeArgs}")
+                        "--no-experimental-features", "--cmakeargs=${cmakeArgs}")
                 }
             }
         }
@@ -4008,6 +4063,7 @@ project(":systemTests") {
         testapp4
         testapp5
         testapp6
+        testapp7
     }
 
     project.ext.buildModule = false
@@ -4107,7 +4163,7 @@ project(":systemTests") {
     }
     test.dependsOn(createTestApps);
 
-    def modtestapps = [ "testapp2", "testapp3", "testapp4", "testapp5", "testapp6"  ]
+    def modtestapps = [ "testapp2", "testapp3", "testapp4", "testapp5", "testapp6", "testapp7"  ]
     modtestapps.each { testapp ->
         def testappCapital = testapp.capitalize()
         def copyTestAppTask = task("copy${testappCapital}", type: Copy) {
@@ -4184,7 +4240,7 @@ project(":systemTests") {
             exclude("test/robot/**");
         }
         if (!IS_UNSTABLE_TEST) {
-            // JDK-8196607 Don't run monocle test cases 
+            // JDK-8196607 Don't run monocle test cases
             exclude("test/robot/com/sun/glass/ui/monocle/**");
         }
         if (!IS_AWT_TEST) {
@@ -4541,7 +4597,8 @@ compileTargets { t ->
         enabled = COMPILE_SWT
         group = "Basic"
         description = "Creates the javafx-swt.jar for the $t.name target"
-        archiveName = "${project(":swt").buildDir}/libs/javafx-swt.jar";
+        destinationDir = file("${project(":swt").buildDir}/libs")
+        archiveName = "javafx-swt.jar"
         includeEmptyDirs = false
         from("${project(":swt").buildDir}/classes/java/main");
         include("**/javafx/embed/swt/**")
@@ -4561,7 +4618,7 @@ compileTargets { t ->
         dependsOn(javafxSwtTask)
 
         doLast() {
-            ant.jar (update: true, index: true, destfile: javafxSwtTask.archiveName)
+            ant.jar (update: true, index: true, destfile: "${javafxSwtTask.destinationDir}/${javafxSwtTask.archiveName}")
         }
     }
 
@@ -4930,7 +4987,7 @@ compileTargets { t ->
             include "**/*.java"
             if (!HAS_UNSUPPORTED_DESKTOP) {
                 exclude("com/sun/javafx/embed/swing/newimpl/**")
-            }  
+            }
 
             if (project.hasProperty("sourceFilter")) {
                 filter(project.sourceFilter)
@@ -5079,8 +5136,8 @@ compileTargets { t ->
     def publicationDirName = "${platformPrefix}publications"
     def publicationDir = "${rootProject.buildDir}/${publicationDirName}"
 
-    moduleProjList.each { project -> 
-        // Create publications to be uploaded 
+    moduleProjList.each { project ->
+        // Create publications to be uploaded
 
         def moduleName = project.ext.moduleName
         def buildDir = project.buildDir

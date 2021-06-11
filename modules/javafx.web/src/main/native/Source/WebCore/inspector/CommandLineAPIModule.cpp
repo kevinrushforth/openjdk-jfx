@@ -44,7 +44,7 @@ void CommandLineAPIModule::injectIfNeeded(InjectedScriptManager* injectedScriptM
 }
 
 CommandLineAPIModule::CommandLineAPIModule()
-    : InjectedScriptModule(ASCIILiteral("CommandLineAPI"))
+    : InjectedScriptModule("CommandLineAPI"_s)
 {
 }
 
@@ -53,14 +53,14 @@ String CommandLineAPIModule::source() const
     return StringImpl::createWithoutCopying(CommandLineAPIModuleSource_js, sizeof(CommandLineAPIModuleSource_js));
 }
 
-JSValue CommandLineAPIModule::host(InjectedScriptManager* injectedScriptManager, ExecState* exec) const
+JSValue CommandLineAPIModule::host(InjectedScriptManager* injectedScriptManager, JSGlobalObject* lexicalGlobalObject) const
 {
     // CommandLineAPIModule should only ever be used by a WebInjectedScriptManager.
     WebInjectedScriptManager* pageInjectedScriptManager = static_cast<WebInjectedScriptManager*>(injectedScriptManager);
     ASSERT(pageInjectedScriptManager->commandLineAPIHost());
 
-    JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(exec->lexicalGlobalObject());
-    return pageInjectedScriptManager->commandLineAPIHost()->wrapper(exec, globalObject);
+    JSDOMGlobalObject* globalObject = jsCast<JSDOMGlobalObject*>(lexicalGlobalObject);
+    return pageInjectedScriptManager->commandLineAPIHost()->wrapper(lexicalGlobalObject, globalObject);
 }
 
 } // namespace WebCore

@@ -23,8 +23,6 @@
 #if PLATFORM(MAC)
 
 #import "RenderThemeCocoa.h"
-#import <wtf/RetainPtr.h>
-#import <wtf/HashMap.h>
 
 #if ENABLE(SERVICE_CONTROLS)
 OBJC_CLASS NSServicesRolloverButtonCell;
@@ -43,6 +41,8 @@ class RenderThemeMac final : public RenderThemeCocoa {
 public:
     friend NeverDestroyed<RenderThemeMac>;
 
+    CFStringRef contentSizeCategory() const final;
+
     // A method asking if the control changes its tint when the window has focus or not.
     bool controlSupportsTints(const RenderObject&) const final;
 
@@ -51,19 +51,23 @@ public:
 
     void adjustRepaintRect(const RenderObject&, FloatRect&) final;
 
-    bool isControlStyled(const RenderStyle&, const BorderData&, const FillLayer&, const Color& backgroundColor) const final;
+    bool isControlStyled(const RenderStyle&, const RenderStyle& userAgentStyle) const final;
 
-    Color platformActiveSelectionBackgroundColor() const final;
-    Color platformInactiveSelectionBackgroundColor() const final;
-    Color platformActiveListBoxSelectionBackgroundColor() const final;
-    Color platformActiveListBoxSelectionForegroundColor() const final;
-    Color platformInactiveListBoxSelectionBackgroundColor() const final;
-    Color platformInactiveListBoxSelectionForegroundColor() const final;
-    Color platformFocusRingColor() const final;
+    bool supportsSelectionForegroundColors(OptionSet<StyleColor::Options>) const final;
 
-    ScrollbarControlSize scrollbarControlSizeForPart(ControlPart) final { return SmallScrollbar; }
+    Color platformActiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformActiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const final;
+    Color transformSelectionBackgroundColor(const Color&, OptionSet<StyleColor::Options>) const final;
+    Color platformInactiveSelectionBackgroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformInactiveSelectionForegroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformActiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformActiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformInactiveListBoxSelectionBackgroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformInactiveListBoxSelectionForegroundColor(OptionSet<StyleColor::Options>) const final;
+    Color platformFocusRingColor(OptionSet<StyleColor::Options>) const final;
+    Color platformTextSearchHighlightColor(OptionSet<StyleColor::Options>) const final;
 
-    void platformColorsDidChange() final;
+    ScrollbarControlSize scrollbarControlSizeForPart(ControlPart) final { return ScrollbarControlSize::Small; }
 
     int minimumMenuListSize(const RenderStyle&) const final;
 
@@ -87,8 +91,6 @@ public:
 
     // Returns the repeat interval of the animation for the progress bar.
     Seconds animationRepeatIntervalForProgressBar(RenderProgress&) const final;
-    // Returns the duration of the animation for the progress bar.
-    double animationDurationForProgressBar(RenderProgress&) const final;
     IntRect progressBarRectForBounds(const RenderObject&, const IntRect&) const final;
 
     // Controls color values returned from platformFocusRingColor(). systemColor() will be used when false.
@@ -99,9 +101,6 @@ public:
 private:
     RenderThemeMac();
 
-    // System fonts.
-    void updateCachedSystemFontDescription(CSSValueID, FontCascadeDescription&) const final;
-
 #if ENABLE(VIDEO)
     // Media controls
     String mediaControlsStyleSheet() final;
@@ -110,53 +109,70 @@ private:
     String mediaControlsBase64StringForIconNameAndType(const String&, const String&) final;
 #endif
 
+#if ENABLE(INPUT_TYPE_DATE)
+    String dateInputStyleSheet() const final;
+#endif
+#if ENABLE(INPUT_TYPE_DATETIMELOCAL)
+    String dateTimeLocalInputStyleSheet() const final;
+#endif
+#if ENABLE(INPUT_TYPE_MONTH)
+    String monthInputStyleSheet() const final;
+#endif
+#if ENABLE(INPUT_TYPE_TIME)
+    String timeInputStyleSheet() const final;
+#endif
+#if ENABLE(INPUT_TYPE_WEEK)
+    String weekInputStyleSheet() const final;
+#endif
+
 #if ENABLE(SERVICE_CONTROLS)
     String imageControlsStyleSheet() const final;
 #endif
 
-    bool supportsSelectionForegroundColors() const final { return false; }
-
     bool paintTextField(const RenderObject&, const PaintInfo&, const FloatRect&) final;
-    void adjustTextFieldStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustTextFieldStyle(RenderStyle&, const Element*) const final;
 
     bool paintTextArea(const RenderObject&, const PaintInfo&, const FloatRect&) final;
-    void adjustTextAreaStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustTextAreaStyle(RenderStyle&, const Element*) const final;
 
     bool paintMenuList(const RenderObject&, const PaintInfo&, const FloatRect&) final;
-    void adjustMenuListStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustMenuListStyle(RenderStyle&, const Element*) const final;
 
     bool paintMenuListButtonDecorations(const RenderBox&, const PaintInfo&, const FloatRect&) final;
-    void adjustMenuListButtonStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustMenuListButtonStyle(RenderStyle&, const Element*) const final;
 
-    void adjustProgressBarStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustProgressBarStyle(RenderStyle&, const Element*) const final;
     bool paintProgressBar(const RenderObject&, const PaintInfo&, const IntRect&) final;
 
     bool paintSliderTrack(const RenderObject&, const PaintInfo&, const IntRect&) final;
-    void adjustSliderTrackStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSliderTrackStyle(RenderStyle&, const Element*) const final;
 
     bool paintSliderThumb(const RenderObject&, const PaintInfo&, const IntRect&) final;
-    void adjustSliderThumbStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSliderThumbStyle(RenderStyle&, const Element*) const final;
 
     bool paintSearchField(const RenderObject&, const PaintInfo&, const IntRect&) final;
-    void adjustSearchFieldStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSearchFieldStyle(RenderStyle&, const Element*) const final;
 
-    void adjustSearchFieldCancelButtonStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSearchFieldCancelButtonStyle(RenderStyle&, const Element*) const final;
     bool paintSearchFieldCancelButton(const RenderBox&, const PaintInfo&, const IntRect&) final;
 
-    void adjustSearchFieldDecorationPartStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSearchFieldDecorationPartStyle(RenderStyle&, const Element*) const final;
     bool paintSearchFieldDecorationPart(const RenderObject&, const PaintInfo&, const IntRect&) final;
 
-    void adjustSearchFieldResultsDecorationPartStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSearchFieldResultsDecorationPartStyle(RenderStyle&, const Element*) const final;
     bool paintSearchFieldResultsDecorationPart(const RenderBox&, const PaintInfo&, const IntRect&) final;
 
-    void adjustSearchFieldResultsButtonStyle(StyleResolver&, RenderStyle&, const Element*) const final;
+    void adjustSearchFieldResultsButtonStyle(RenderStyle&, const Element*) const final;
     bool paintSearchFieldResultsButton(const RenderBox&, const PaintInfo&, const IntRect&) final;
+
+#if ENABLE(DATALIST_ELEMENT)
+    void paintListButtonForInput(const RenderObject&, GraphicsContext&, const FloatRect&);
+    void adjustListButtonStyle(RenderStyle&, const Element*) const final;
+#endif
 
 #if ENABLE(VIDEO)
     bool supportsClosedCaptioning() const final { return true; }
 #endif
-
-    bool shouldHaveCapsLockIndicator(const HTMLInputElement&) const final;
 
     bool paintSnapshottedPluginOverlay(const RenderObject&, const PaintInfo&, const IntRect&) final;
 
@@ -169,7 +185,7 @@ private:
 private:
     String fileListNameForWidth(const FileList*, const FontCascade&, int width, bool multipleFilesAllowed) const final;
 
-    Color systemColor(CSSValueID) const final;
+    Color systemColor(CSSValueID, OptionSet<StyleColor::Options>) const final;
 
     void purgeCaches() final;
 
@@ -181,7 +197,7 @@ private:
     void setSizeFromFont(RenderStyle&, const IntSize* sizes) const;
     IntSize sizeForFont(const RenderStyle&, const IntSize* sizes) const;
     IntSize sizeForSystemFont(const RenderStyle&, const IntSize* sizes) const;
-    void setFontFromControlSize(StyleResolver&, RenderStyle&, NSControlSize) const;
+    void setFontFromControlSize(RenderStyle&, NSControlSize) const;
 
     void updateCheckedState(NSCell*, const RenderObject&);
     void updateEnabledState(NSCell*, const RenderObject&);
@@ -210,6 +226,9 @@ private:
     NSSliderCell *sliderThumbHorizontal() const;
     NSSliderCell *sliderThumbVertical() const;
     NSTextFieldCell *textField() const;
+#if ENABLE(DATALIST_ELEMENT)
+    NSCell *listButton() const;
+#endif
 
 #if ENABLE(METER_ELEMENT)
     NSLevelIndicatorStyle levelIndicatorStyleFor(ControlPart) const;
@@ -238,11 +257,12 @@ private:
 #if ENABLE(SERVICE_CONTROLS)
     mutable RetainPtr<NSServicesRolloverButtonCell> m_servicesRolloverButton;
 #endif
+#if ENABLE(DATALIST_ELEMENT)
+    mutable RetainPtr<NSCell> m_listButton;
+#endif
 
     bool m_isSliderThumbHorizontalPressed { false };
     bool m_isSliderThumbVerticalPressed { false };
-
-    mutable HashMap<int, Color> m_systemColorCache;
 
     RetainPtr<WebCoreRenderThemeNotificationObserver> m_notificationObserver;
 

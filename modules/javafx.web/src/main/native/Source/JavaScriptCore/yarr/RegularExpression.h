@@ -31,17 +31,18 @@ namespace JSC { namespace Yarr {
 
 enum MultilineMode { MultilineDisabled, MultilineEnabled };
 enum TextCaseSensitivity { TextCaseSensitive, TextCaseInsensitive };
+enum UnicodeMode { UnicodeUnawareMode, UnicodeAwareMode };
 
 class JS_EXPORT_PRIVATE RegularExpression {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit RegularExpression(const String&, TextCaseSensitivity = TextCaseSensitive, MultilineMode = MultilineDisabled);
+    explicit RegularExpression(const String&, TextCaseSensitivity = TextCaseSensitive, MultilineMode = MultilineDisabled, UnicodeMode = UnicodeUnawareMode);
     ~RegularExpression();
 
     RegularExpression(const RegularExpression&);
     RegularExpression& operator=(const RegularExpression&);
 
-    int match(const String&, int startFrom = 0, int* matchLength = 0) const;
+    int match(const String&, int startFrom = 0, int* matchLength = nullptr) const;
     int searchRev(const String&) const;
 
     int matchedLength() const;

@@ -57,9 +57,16 @@ public:
     void setNextTextBox(InlineTextBox* n) { m_nextTextBox = n; }
     void setPreviousTextBox(InlineTextBox* p) { m_prevTextBox = p; }
 
+    bool hasTextContent() const;
+
+    // These functions do not account for combined text. For combined text this box will always have len() == 1
+    // regardless of whether the resulting composition is the empty string. Use hasTextContent() if you want to
+    // know whether this box has text content.
+    //
     // FIXME: These accessors should ASSERT(!isDirty()). See https://bugs.webkit.org/show_bug.cgi?id=97264
+    // Note len() == 1 for combined text regardless of whether the composition is empty. Use hasTextContent() to
     unsigned start() const { return m_start; }
-    unsigned end() const { return m_len ? m_start + m_len - 1 : m_start; }
+    unsigned end() const { return m_start + m_len; }
     unsigned len() const { return m_len; }
 
     void setStart(unsigned start) { m_start = start; }
@@ -73,21 +80,21 @@ public:
 
     using InlineBox::hasHyphen;
     using InlineBox::setHasHyphen;
-    using InlineBox::canHaveLeadingExpansion;
-    using InlineBox::setCanHaveLeadingExpansion;
-    using InlineBox::canHaveTrailingExpansion;
-    using InlineBox::setCanHaveTrailingExpansion;
-    using InlineBox::forceTrailingExpansion;
-    using InlineBox::setForceTrailingExpansion;
-    using InlineBox::forceLeadingExpansion;
-    using InlineBox::setForceLeadingExpansion;
+    using InlineBox::canHaveLeftExpansion;
+    using InlineBox::setCanHaveLeftExpansion;
+    using InlineBox::canHaveRightExpansion;
+    using InlineBox::setCanHaveRightExpansion;
+    using InlineBox::forceRightExpansion;
+    using InlineBox::setForceRightExpansion;
+    using InlineBox::forceLeftExpansion;
+    using InlineBox::setForceLeftExpansion;
 
     static inline bool compareByStart(const InlineTextBox* first, const InlineTextBox* second) { return first->start() < second->start(); }
 
     int baselinePosition(FontBaseline) const final;
     LayoutUnit lineHeight() const final;
 
-    bool emphasisMarkExistsAndIsAbove(const RenderStyle&, bool& isAbove) const;
+    Optional<bool> emphasisMarkExistsAndIsAbove(const RenderStyle&) const;
 
     LayoutRect logicalOverflowRect() const;
     void setLogicalOverflowRect(const LayoutRect&);
@@ -114,6 +121,7 @@ public:
     virtual LayoutRect localSelectionRect(unsigned startPos, unsigned endPos) const;
     bool isSelected(unsigned startPosition, unsigned endPosition) const;
     std::pair<unsigned, unsigned> selectionStartEnd() const;
+    std::pair<unsigned, unsigned> highlightStartEnd(HighlightData&) const;
 
 protected:
     void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
@@ -126,8 +134,11 @@ private:
     void extractLine() final;
     void attachLine() final;
 
+    RenderObject::HighlightState verifySelectionState(RenderObject::HighlightState, HighlightData&) const;
+    std::pair<unsigned, unsigned> clampedStartEndForState(unsigned, unsigned, RenderObject::HighlightState) const;
+
 public:
-    RenderObject::SelectionState selectionState() final;
+    RenderObject::HighlightState selectionState() final;
 
 private:
     void clearTruncation() final { m_truncation = cNoTruncation; }
@@ -150,6 +161,10 @@ public:
     virtual int offsetForPosition(float x, bool includePartialGlyphs = true) const;
     virtual float positionForOffset(unsigned offset) const;
 
+    bool hasMarkers() const;
+    FloatRect calculateUnionOfAllDocumentMarkerBounds() const;
+    FloatRect calculateDocumentMarkerBounds(const MarkedText&) const;
+
 private:
     struct MarkedTextStyle;
     struct StyledMarkedText;
@@ -157,7 +172,8 @@ private:
     enum class TextPaintPhase { Background, Foreground, Decoration };
 
     Vector<MarkedText> collectMarkedTextsForDraggedContent();
-    Vector<MarkedText> collectMarkedTextsForDocumentMarkers(TextPaintPhase);
+    Vector<MarkedText> collectMarkedTextsForDocumentMarkers(TextPaintPhase) const;
+    Vector<MarkedText> collectMarkedTextsForHighlights(TextPaintPhase) const;
 
     MarkedTextStyle computeStyleForUnmarkedMarkedText(const PaintInfo&) const;
     StyledMarkedText resolveStyleForMarkedText(const MarkedText&, const MarkedTextStyle& baseStyle, const PaintInfo&);
@@ -168,24 +184,25 @@ private:
 
     FloatPoint textOriginFromBoxRect(const FloatRect&) const;
 
-    void paintMarkedTexts(GraphicsContext&, TextPaintPhase, const FloatRect& boxRect, const Vector<StyledMarkedText>&, const FloatRect& decorationClipOutRect = { });
+    void paintMarkedTexts(PaintInfo&, TextPaintPhase, const FloatRect& boxRect, const Vector<StyledMarkedText>&, const FloatRect& decorationClipOutRect = { });
 
     void paintPlatformDocumentMarker(GraphicsContext&, const FloatPoint& boxOrigin, const MarkedText&);
     void paintPlatformDocumentMarkers(GraphicsContext&, const FloatPoint& boxOrigin);
 
-    void paintCompositionBackground(GraphicsContext&, const FloatPoint& boxOrigin);
-    void paintCompositionUnderlines(GraphicsContext&, const FloatPoint& boxOrigin) const;
-    void paintCompositionUnderline(GraphicsContext&, const FloatPoint& boxOrigin, const CompositionUnderline&) const;
+    void paintCompositionBackground(PaintInfo&, const FloatPoint& boxOrigin);
+    void paintCompositionUnderlines(PaintInfo&, const FloatPoint& boxOrigin) const;
+    void paintCompositionUnderline(PaintInfo&, const FloatPoint& boxOrigin, const CompositionUnderline&) const;
 
-    void paintMarkedTextBackground(GraphicsContext&, const FloatPoint& boxOrigin, const Color&, unsigned clampedStartOffset, unsigned clampedEndOffset);
-    void paintMarkedTextForeground(GraphicsContext&, const FloatRect& boxRect, const StyledMarkedText&);
-    void paintMarkedTextDecoration(GraphicsContext&, const FloatRect& boxRect, const FloatRect& clipOutRect, const StyledMarkedText&);
+    enum class MarkedTextBackgroundStyle : bool { Default, Rounded };
+    void paintMarkedTextBackground(PaintInfo&, const FloatPoint& boxOrigin, const Color&, unsigned clampedStartOffset, unsigned clampedEndOffset, MarkedTextBackgroundStyle = MarkedTextBackgroundStyle::Default);
+    void paintMarkedTextForeground(PaintInfo&, const FloatRect& boxRect, const StyledMarkedText&);
+    void paintMarkedTextDecoration(PaintInfo&, const FloatRect& boxRect, const FloatRect& clipOutRect, const StyledMarkedText&);
 
     const RenderCombineText* combinedText() const;
     const FontCascade& lineFont() const;
 
     String text(bool ignoreCombinedText = false, bool ignoreHyphen = false) const; // The effective text for the run.
-    TextRun createTextRun(String&) const;
+    TextRun createTextRun(bool ignoreCombinedText = false, bool ignoreHyphen = false) const;
 
     ExpansionBehavior expansionBehavior() const;
 
@@ -201,6 +218,8 @@ private:
     // denote no truncation (the whole run paints) and full truncation (nothing paints at all).
     unsigned short m_truncation { cNoTruncation };
 };
+
+LayoutRect snappedSelectionRect(const LayoutRect&, float logicalRight, float selectionTop, float selectionHeight, bool isHorizontal);
 
 } // namespace WebCore
 

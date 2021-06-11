@@ -32,7 +32,7 @@ namespace JSC {
 class MapPrototype;
 class GetterSetter;
 
-class MapConstructor : public InternalFunction {
+class MapConstructor final : public InternalFunction {
 public:
     typedef InternalFunction Base;
 
@@ -55,10 +55,11 @@ private:
 
     void finishCreation(VM&, MapPrototype*, GetterSetter* speciesSymbol);
 };
+STATIC_ASSERT_ISO_SUBSPACE_SHARABLE(MapConstructor, InternalFunction);
 
-EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketHead(ExecState*);
-EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketNext(ExecState*);
-EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketKey(ExecState*);
-EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketValue(ExecState*);
+EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketHead(JSGlobalObject*, CallFrame*);
+EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketNext(JSGlobalObject*, CallFrame*);
+EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketKey(JSGlobalObject*, CallFrame*);
+EncodedJSValue JSC_HOST_CALL mapPrivateFuncMapBucketValue(JSGlobalObject*, CallFrame*);
 
 } // namespace JSC

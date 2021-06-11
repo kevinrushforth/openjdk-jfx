@@ -26,14 +26,13 @@
 #include "config.h"
 #include "Allocator.h"
 
-#include "Heap.h"
-#include "ThreadLocalCacheLayout.h"
+#include "LocalAllocator.h"
 
 namespace JSC {
 
-unsigned Allocator::cellSize(Heap& heap) const
+unsigned Allocator::cellSize() const
 {
-    return heap.threadLocalCacheLayout().directory(m_offset)->cellSize();
+    return m_localAllocator->cellSize();
 }
 
 } // namespace JSC

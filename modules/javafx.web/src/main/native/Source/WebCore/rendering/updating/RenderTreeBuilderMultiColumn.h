@@ -30,6 +30,7 @@
 namespace WebCore {
 
 class RenderBlockFlow;
+class RenderMultiColumnFlow;
 
 class RenderTreeBuilder::MultiColumn {
     WTF_MAKE_FAST_ALLOCATED;
@@ -43,6 +44,7 @@ public:
     RenderObject* resolveMovedChild(RenderFragmentedFlow& enclosingFragmentedFlow, RenderObject* beforeChild);
     void multiColumnDescendantInserted(RenderMultiColumnFlow&, RenderObject& newDescendant);
     void multiColumnRelativeWillBeRemoved(RenderMultiColumnFlow&, RenderObject& relative);
+    static RenderObject* adjustBeforeChildForMultiColumnSpannerIfNeeded(RenderObject& beforeChild);
 
 private:
     void createFragmentedFlow(RenderBlockFlow&);

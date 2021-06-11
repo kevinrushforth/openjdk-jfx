@@ -30,7 +30,7 @@
 #include "ScriptWrappable.h"
 #include <wtf/MonotonicTime.h>
 #include <wtf/TypeCasts.h>
-#include <wtf/text/AtomicString.h>
+#include <wtf/text/AtomString.h>
 
 namespace WebCore {
 
@@ -38,37 +38,33 @@ class EventPath;
 class EventTarget;
 class ScriptExecutionContext;
 
-enum EventInterface {
-
-#define DOM_EVENT_INTERFACE_DECLARE(name) name##InterfaceType,
-DOM_EVENT_INTERFACES_FOR_EACH(DOM_EVENT_INTERFACE_DECLARE)
-#undef DOM_EVENT_INTERFACE_DECLARE
-
-};
-
 class Event : public ScriptWrappable, public RefCounted<Event> {
+    WTF_MAKE_ISO_ALLOCATED(Event);
 public:
-    enum class IsTrusted { No, Yes };
+    enum class IsTrusted : uint8_t { No, Yes };
+    enum class CanBubble : uint8_t { No, Yes };
+    enum class IsCancelable : uint8_t { No, Yes };
+    enum class IsComposed : uint8_t { No, Yes };
 
-    enum PhaseType {
+    enum PhaseType : uint8_t {
         NONE = 0,
         CAPTURING_PHASE = 1,
         AT_TARGET = 2,
         BUBBLING_PHASE = 3
     };
 
-    static Ref<Event> create(const AtomicString& type, bool canBubble, bool cancelable);
+    WEBCORE_EXPORT static Ref<Event> create(const AtomString& type, CanBubble, IsCancelable, IsComposed = IsComposed::No);
     static Ref<Event> createForBindings();
-    static Ref<Event> create(const AtomicString& type, const EventInit&, IsTrusted = IsTrusted::No);
+    static Ref<Event> create(const AtomString& type, const EventInit&, IsTrusted = IsTrusted::No);
 
     virtual ~Event();
 
-    WEBCORE_EXPORT void initEvent(const AtomicString& type, bool canBubble, bool cancelable);
+    WEBCORE_EXPORT void initEvent(const AtomString& type, bool canBubble, bool cancelable);
 
     bool isInitialized() const { return m_isInitialized; }
 
-    const AtomicString& type() const { return m_type; }
-    void setType(const AtomicString& type) { m_type = type; }
+    const AtomString& type() const { return m_type; }
+    void setType(const AtomString& type) { m_type = type; }
 
     EventTarget* target() const { return m_target.get(); }
     void setTarget(RefPtr<EventTarget>&&);
@@ -81,7 +77,7 @@ public:
 
     bool bubbles() const { return m_canBubble; }
     bool cancelable() const { return m_cancelable; }
-    WEBCORE_EXPORT bool composed() const;
+    bool composed() const { return m_composed; }
 
     DOMHighResTimeStamp timeStampForBindings(ScriptExecutionContext&) const;
     MonotonicTime timeStamp() const { return m_createTime; }
@@ -95,8 +91,8 @@ public:
     bool isTrusted() const { return m_isTrusted; }
     void setUntrusted() { m_isTrusted = false; }
 
-    bool legacyReturnValue() const { return !defaultPrevented(); }
-    void setLegacyReturnValue(bool returnValue) { setDefaultPrevented(!returnValue); }
+    bool legacyReturnValue() const { return !m_wasCanceled; }
+    void setLegacyReturnValue(bool);
 
     virtual EventInterface eventInterface() const { return EventInterfaceType; }
 
@@ -109,6 +105,7 @@ public:
     virtual bool isInputEvent() const { return false; }
     virtual bool isKeyboardEvent() const { return false; }
     virtual bool isMouseEvent() const { return false; }
+    virtual bool isPointerEvent() const { return false; }
     virtual bool isTextEvent() const { return false; }
     virtual bool isTouchEvent() const { return false; }
     virtual bool isUIEvent() const { return false; }
@@ -122,14 +119,17 @@ public:
     bool propagationStopped() const { return m_propagationStopped || m_immediatePropagationStopped; }
     bool immediatePropagationStopped() const { return m_immediatePropagationStopped; }
 
+    void resetBeforeDispatch();
     void resetAfterDispatch();
 
-    bool defaultPrevented() const { return m_defaultPrevented; }
+    bool defaultPrevented() const { return m_wasCanceled; }
     void preventDefault();
-    void setDefaultPrevented(bool defaultPrevented) { m_defaultPrevented = defaultPrevented; }
 
     bool defaultHandled() const { return m_defaultHandled; }
     void setDefaultHandled() { m_defaultHandled = true; }
+
+    bool isDefaultEventHandlerIgnored() const { return m_isDefaultEventHandlerIgnored; }
+    void setIsDefaultEventHandlerIgnored() { m_isDefaultEventHandlerIgnored = true; }
 
     void setInPassiveListener(bool value) { m_isExecutingPassiveEventListener = value; }
 
@@ -148,28 +148,34 @@ public:
 
 protected:
     explicit Event(IsTrusted = IsTrusted::No);
-    WEBCORE_EXPORT Event(const AtomicString& type, bool canBubble, bool cancelable);
-    Event(const AtomicString& type, bool canBubble, bool cancelable, MonotonicTime timestamp);
-    Event(const AtomicString& type, const EventInit&, IsTrusted);
+    Event(const AtomString& type, CanBubble, IsCancelable, IsComposed = IsComposed::No);
+    Event(const AtomString& type, CanBubble, IsCancelable, IsComposed, MonotonicTime timestamp, IsTrusted isTrusted = IsTrusted::Yes);
+    Event(const AtomString& type, const EventInit&, IsTrusted);
 
     virtual void receivedTarget() { }
 
 private:
-    AtomicString m_type;
+    explicit Event(MonotonicTime createTime, const AtomString& type, IsTrusted, CanBubble, IsCancelable, IsComposed);
 
-    bool m_isInitialized { false };
-    bool m_canBubble { false };
-    bool m_cancelable { false };
-    bool m_composed { false };
+    void setCanceledFlagIfPossible();
 
-    bool m_propagationStopped { false };
-    bool m_immediatePropagationStopped { false };
-    bool m_defaultPrevented { false };
-    bool m_defaultHandled { false };
-    bool m_isTrusted { false };
-    bool m_isExecutingPassiveEventListener { false };
+    unsigned m_isInitialized : 1;
+    unsigned m_canBubble : 1;
+    unsigned m_cancelable : 1;
+    unsigned m_composed : 1;
 
-    PhaseType m_eventPhase { NONE };
+    unsigned m_propagationStopped : 1;
+    unsigned m_immediatePropagationStopped : 1;
+    unsigned m_wasCanceled : 1;
+    unsigned m_defaultHandled : 1;
+    unsigned m_isDefaultEventHandlerIgnored : 1;
+    unsigned m_isTrusted : 1;
+    unsigned m_isExecutingPassiveEventListener : 1;
+
+    unsigned m_eventPhase : 2;
+
+    AtomString m_type;
+
     RefPtr<EventTarget> m_currentTarget;
     const EventPath* m_eventPath { nullptr };
     RefPtr<EventTarget> m_target;
@@ -178,25 +184,22 @@ private:
     RefPtr<Event> m_underlyingEvent;
 };
 
-inline Ref<Event> Event::create(const AtomicString& type, bool canBubble, bool cancelable)
-{
-    return adoptRef(*new Event(type, canBubble, cancelable));
-}
-
-inline Ref<Event> Event::createForBindings()
-{
-    return adoptRef(*new Event);
-}
-
-inline Ref<Event> Event::create(const AtomicString& type, const EventInit& initializer, IsTrusted isTrusted)
-{
-    return adoptRef(*new Event(type, initializer, isTrusted));
-}
-
 inline void Event::preventDefault()
 {
+    setCanceledFlagIfPossible();
+}
+
+inline void Event::setLegacyReturnValue(bool returnValue)
+{
+    if (!returnValue)
+        setCanceledFlagIfPossible();
+}
+
+// https://dom.spec.whatwg.org/#set-the-canceled-flag
+inline void Event::setCanceledFlagIfPossible()
+{
     if (m_cancelable && !m_isExecutingPassiveEventListener)
-        m_defaultPrevented = true;
+        m_wasCanceled = true;
     // FIXME: Specification suggests we log something to the console when preventDefault is called but
     // doesn't do anything because the event is not cancelable or is executing passive event listeners.
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,11 +34,10 @@ namespace bmalloc {
 enum class HeapKind {
     Primary,
     PrimitiveGigacage,
-    JSValueGigacage,
-    StringGigacage
+    JSValueGigacage
 };
 
-static constexpr unsigned numHeaps = 4;
+static constexpr unsigned numHeaps = 3;
 
 BINLINE bool isGigacage(HeapKind heapKind)
 {
@@ -47,7 +46,6 @@ BINLINE bool isGigacage(HeapKind heapKind)
         return false;
     case HeapKind::PrimitiveGigacage:
     case HeapKind::JSValueGigacage:
-    case HeapKind::StringGigacage:
         return true;
     }
     BCRASH();
@@ -64,8 +62,6 @@ BINLINE Gigacage::Kind gigacageKind(HeapKind kind)
         return Gigacage::Primitive;
     case HeapKind::JSValueGigacage:
         return Gigacage::JSValue;
-    case HeapKind::StringGigacage:
-        return Gigacage::String;
     }
     BCRASH();
     return Gigacage::Primitive;
@@ -78,8 +74,8 @@ BINLINE HeapKind heapKind(Gigacage::Kind kind)
         return HeapKind::PrimitiveGigacage;
     case Gigacage::JSValue:
         return HeapKind::JSValueGigacage;
-    case Gigacage::String:
-        return HeapKind::StringGigacage;
+    case Gigacage::NumberOfKinds:
+        break;
     }
     BCRASH();
     return HeapKind::Primary;
@@ -90,8 +86,7 @@ BINLINE bool isActiveHeapKindAfterEnsuringGigacage(HeapKind kind)
     switch (kind) {
     case HeapKind::PrimitiveGigacage:
     case HeapKind::JSValueGigacage:
-    case HeapKind::StringGigacage:
-        if (Gigacage::wasEnabled())
+        if (Gigacage::isEnabled())
             return true;
         return false;
     default:
@@ -106,8 +101,7 @@ BINLINE HeapKind mapToActiveHeapKindAfterEnsuringGigacage(HeapKind kind)
     switch (kind) {
     case HeapKind::PrimitiveGigacage:
     case HeapKind::JSValueGigacage:
-    case HeapKind::StringGigacage:
-        if (Gigacage::wasEnabled())
+        if (Gigacage::isEnabled())
             return kind;
         return HeapKind::Primary;
     default:

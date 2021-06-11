@@ -29,7 +29,7 @@
 #include "GraphicsContextJava.h"
 #include "HTMLPlugInElement.h"
 #include "IntSize.h"
-#include <wtf/java/JavaEnv.h>
+#include "PlatformJavaClasses.h"
 #include "ResourceError.h"
 #include "ResourceResponse.h"
 #include "ScrollView.h"
@@ -60,7 +60,7 @@ public:
     ~PluginWidgetJava() override;
 
     void invalidateRect(const IntRect&) override;
-    void paint(GraphicsContext&, const IntRect&, SecurityOriginPaintPolicy = SecurityOriginPaintPolicy::AnyOrigin) override;
+    void paint(GraphicsContext&, const IntRect&, SecurityOriginPaintPolicy = SecurityOriginPaintPolicy::AnyOrigin, EventRegionContext* = nullptr) override;
     void invalidateWindowlessPluginRect(const IntRect& rect);
     void convertToPage(IntRect& rect);
     void focusPluginElement(bool isFocused);

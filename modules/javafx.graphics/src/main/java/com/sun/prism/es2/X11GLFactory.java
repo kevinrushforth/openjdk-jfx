@@ -42,13 +42,13 @@ class X11GLFactory extends GLFactory {
     private GLGPUInfo preQualificationFilter[] = {
         new GLGPUInfo("advanced micro devices", null),
         new GLGPUInfo("ati", null),
-        new GLGPUInfo("intel open source technology center", null),
+        new GLGPUInfo("intel", null),
         new GLGPUInfo("nvidia", null),
         new GLGPUInfo("nouveau", null),
         new GLGPUInfo("x.org", null)
     };
 
-    private GLGPUInfo blackList[] = {
+    private GLGPUInfo rejectList[] = {
         new GLGPUInfo("ati", "radeon x1300"),
         new GLGPUInfo("ati", "radeon x1350"),
         new GLGPUInfo("ati", "radeon x1400"),
@@ -97,8 +97,8 @@ class X11GLFactory extends GLFactory {
     }
 
     @Override
-    GLGPUInfo[] getBlackList() {
-        return blackList;
+    GLGPUInfo[] getRejectList() {
+        return rejectList;
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2016 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2012-2019 Apple Inc. All Rights Reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -37,17 +37,25 @@ class WatchpointSet;
 
 class JSScope : public JSNonFinalObject {
 public:
-    typedef JSNonFinalObject Base;
-    static const unsigned StructureFlags = Base::StructureFlags | OverridesToThis;
+    using Base = JSNonFinalObject;
+    static constexpr unsigned StructureFlags = Base::StructureFlags | OverridesToThis;
+
+    template<typename, SubspaceAccess>
+    static void subspaceFor(VM&)
+    {
+        RELEASE_ASSERT_NOT_REACHED();
+    }
+
+    DECLARE_EXPORT_INFO;
 
     friend class LLIntOffsetsExtractor;
     static size_t offsetOfNext();
 
     static JSObject* objectAtScope(JSScope*);
 
-    static JSObject* resolve(ExecState*, JSScope*, const Identifier&);
-    static JSValue resolveScopeForHoistingFuncDeclInEval(ExecState*, JSScope*, const Identifier&);
-    static ResolveOp abstractResolve(ExecState*, size_t depthOffset, JSScope*, const Identifier&, GetOrPut, ResolveType, InitializationMode);
+    static JSObject* resolve(JSGlobalObject*, JSScope*, const Identifier&);
+    static JSValue resolveScopeForHoistingFuncDeclInEval(JSGlobalObject*, JSScope*, const Identifier&);
+    static ResolveOp abstractResolve(JSGlobalObject*, size_t depthOffset, JSScope*, const Identifier&, GetOrPut, ResolveType, InitializationMode);
 
     static bool hasConstantScope(ResolveType);
     static JSScope* constantScopeForCodeBlock(ResolveType, CodeBlock*);
@@ -68,19 +76,17 @@ public:
     ScopeChainIterator end();
     JSScope* next();
 
-    JSGlobalObject* globalObject();
-    JSGlobalObject* globalObject(VM&);
     JSObject* globalThis();
 
     SymbolTable* symbolTable(VM&);
 
-    JS_EXPORT_PRIVATE static JSValue toThis(JSCell*, ExecState*, ECMAMode);
+    JS_EXPORT_PRIVATE static JSValue toThis(JSCell*, JSGlobalObject*, ECMAMode);
 
 protected:
     JSScope(VM&, Structure*, JSScope* next);
 
     template<typename ReturnPredicateFunctor, typename SkipPredicateFunctor>
-    static JSObject* resolve(ExecState*, JSScope*, const Identifier&, ReturnPredicateFunctor, SkipPredicateFunctor);
+    static JSObject* resolve(JSGlobalObject*, JSScope*, const Identifier&, ReturnPredicateFunctor, SkipPredicateFunctor);
 
 private:
     WriteBarrier<JSScope> m_next;
@@ -121,38 +127,12 @@ inline ScopeChainIterator JSScope::begin()
 
 inline ScopeChainIterator JSScope::end()
 {
-    return ScopeChainIterator(0);
+    return ScopeChainIterator(nullptr);
 }
 
 inline JSScope* JSScope::next()
 {
     return m_next.get();
-}
-
-inline JSGlobalObject* JSScope::globalObject()
-{
-    return structure()->globalObject();
-}
-
-inline JSGlobalObject* JSScope::globalObject(VM& vm)
-{
-    return structure(vm)->globalObject();
-}
-
-inline Register& Register::operator=(JSScope* scope)
-{
-    *this = JSValue(scope);
-    return *this;
-}
-
-inline JSScope* Register::scope() const
-{
-    return jsCast<JSScope*>(unboxedCell());
-}
-
-inline JSGlobalObject* ExecState::lexicalGlobalObject() const
-{
-    return jsCallee()->globalObject();
 }
 
 inline size_t JSScope::offsetOfNext()

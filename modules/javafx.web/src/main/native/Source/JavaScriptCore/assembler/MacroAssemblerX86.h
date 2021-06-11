@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008, 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2008-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,10 +33,8 @@ namespace JSC {
 
 class MacroAssemblerX86 : public MacroAssemblerX86Common {
 public:
-    static const unsigned numGPRs = 8;
-    static const unsigned numFPRs = 8;
-
-    static const Scale ScalePtr = TimesFour;
+    static constexpr unsigned numGPRs = 8;
+    static constexpr unsigned numFPRs = 8;
 
     using MacroAssemblerX86Common::add32;
     using MacroAssemblerX86Common::and32;
@@ -51,6 +49,7 @@ public:
     using MacroAssemblerX86Common::branch32;
     using MacroAssemblerX86Common::call;
     using MacroAssemblerX86Common::jump;
+    using MacroAssemblerX86Common::farJump;
     using MacroAssemblerX86Common::addDouble;
     using MacroAssemblerX86Common::loadDouble;
     using MacroAssemblerX86Common::storeDouble;
@@ -99,6 +98,11 @@ public:
         m_assembler.orl_rm(reg, address.m_ptr);
     }
 
+    void or16(TrustedImm32 imm, AbsoluteAddress address)
+    {
+        m_assembler.orw_im(imm.m_value, address.m_ptr);
+    }
+
     void sub32(TrustedImm32 imm, AbsoluteAddress address)
     {
         m_assembler.subl_im(imm.m_value, address.m_ptr);
@@ -140,9 +144,8 @@ public:
 
     void storeDouble(FPRegisterID src, TrustedImmPtr address)
     {
-        ASSERT(isSSE2Present());
         ASSERT(address.m_value);
-        m_assembler.movsd_rm(src, address.m_value);
+        m_assembler.movsd_rm(src, address.asPtr());
     }
 
     void convertInt32ToDouble(AbsoluteAddress src, FPRegisterID dest)
@@ -173,7 +176,6 @@ public:
 
     void moveDoubleToInts(FPRegisterID src, RegisterID dest1, RegisterID dest2)
     {
-        ASSERT(isSSE2Present());
         m_assembler.pextrw_irr(3, src, dest1);
         m_assembler.pextrw_irr(2, src, dest2);
         lshift32(TrustedImm32(16), dest1);
@@ -213,27 +215,20 @@ public:
         return Jump(m_assembler.jCC(x86Condition(cond)));
     }
 
-    Call call()
+    Call call(PtrTag)
     {
         return Call(m_assembler.call(), Call::Linkable);
     }
 
+    ALWAYS_INLINE Call call(RegisterID callTag) { return UNUSED_PARAM(callTag), call(NoPtrTag); }
+
     // Address is a memory location containing the address to jump to
-    void jump(AbsoluteAddress address)
+    void farJump(AbsoluteAddress address, PtrTag)
     {
         m_assembler.jmp_m(address.m_ptr);
     }
 
-    Call tailRecursiveCall()
-    {
-        return Call::fromTailJump(jump());
-    }
-
-    Call makeTailRecursiveCall(Jump oldJump)
-    {
-        return Call::fromTailJump(oldJump);
-    }
-
+    ALWAYS_INLINE void farJump(AbsoluteAddress address, RegisterID jumpTag) { UNUSED_PARAM(jumpTag), farJump(address, NoPtrTag); }
 
     DataLabelPtr moveWithPatch(TrustedImmPtr initialValue, RegisterID dest)
     {
@@ -290,21 +285,23 @@ public:
         return DataLabelPtr(this);
     }
 
-    static bool supportsFloatingPoint() { return isSSE2Present(); }
-    static bool supportsFloatingPointTruncate() { return isSSE2Present(); }
-    static bool supportsFloatingPointSqrt() { return isSSE2Present(); }
-    static bool supportsFloatingPointAbs() { return isSSE2Present(); }
+    static bool supportsFloatingPoint() { return true; }
+    static bool supportsFloatingPointTruncate() { return true; }
+    static bool supportsFloatingPointSqrt() { return true; }
+    static bool supportsFloatingPointAbs() { return true; }
 
-    static FunctionPtr readCallTarget(CodeLocationCall call)
+    template<PtrTag resultTag, PtrTag locationTag>
+    static FunctionPtr<resultTag> readCallTarget(CodeLocationCall<locationTag> call)
     {
-        intptr_t offset = reinterpret_cast<int32_t*>(call.dataLocation())[-1];
-        return FunctionPtr(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(call.dataLocation()) + offset));
+        intptr_t offset = WTF::unalignedLoad<int32_t>(bitwise_cast<int32_t*>(call.dataLocation()) - 1);
+        return FunctionPtr<resultTag>(reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(call.dataLocation()) + offset));
     }
 
     static bool canJumpReplacePatchableBranchPtrWithPatch() { return true; }
     static bool canJumpReplacePatchableBranch32WithPatch() { return true; }
 
-    static CodeLocationLabel startOfBranchPtrWithPatchOnRegister(CodeLocationDataLabelPtr label)
+    template<PtrTag tag>
+    static CodeLocationLabel<tag> startOfBranchPtrWithPatchOnRegister(CodeLocationDataLabelPtr<tag> label)
     {
         const int opcodeBytes = 1;
         const int modRMBytes = 1;
@@ -314,7 +311,8 @@ public:
         return label.labelAtOffset(-totalBytes);
     }
 
-    static CodeLocationLabel startOfPatchableBranchPtrWithPatchOnAddress(CodeLocationDataLabelPtr label)
+    template<PtrTag tag>
+    static CodeLocationLabel<tag> startOfPatchableBranchPtrWithPatchOnAddress(CodeLocationDataLabelPtr<tag> label)
     {
         const int opcodeBytes = 1;
         const int modRMBytes = 1;
@@ -325,7 +323,8 @@ public:
         return label.labelAtOffset(-totalBytes);
     }
 
-    static CodeLocationLabel startOfPatchableBranch32WithPatchOnAddress(CodeLocationDataLabel32 label)
+    template<PtrTag tag>
+    static CodeLocationLabel<tag> startOfPatchableBranch32WithPatchOnAddress(CodeLocationDataLabel32<tag> label)
     {
         const int opcodeBytes = 1;
         const int modRMBytes = 1;
@@ -336,29 +335,34 @@ public:
         return label.labelAtOffset(-totalBytes);
     }
 
-    static void revertJumpReplacementToBranchPtrWithPatch(CodeLocationLabel instructionStart, RegisterID reg, void* initialValue)
+    template<PtrTag tag>
+    static void revertJumpReplacementToBranchPtrWithPatch(CodeLocationLabel<tag> instructionStart, RegisterID reg, void* initialValue)
     {
         X86Assembler::revertJumpTo_cmpl_ir_force32(instructionStart.executableAddress(), reinterpret_cast<intptr_t>(initialValue), reg);
     }
 
-    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel instructionStart, Address address, void* initialValue)
+    template<PtrTag tag>
+    static void revertJumpReplacementToPatchableBranchPtrWithPatch(CodeLocationLabel<tag> instructionStart, Address address, void* initialValue)
     {
         ASSERT(!address.offset);
         X86Assembler::revertJumpTo_cmpl_im_force32(instructionStart.executableAddress(), reinterpret_cast<intptr_t>(initialValue), 0, address.base);
     }
 
-    static void revertJumpReplacementToPatchableBranch32WithPatch(CodeLocationLabel instructionStart, Address address, int32_t initialValue)
+    template<PtrTag tag>
+    static void revertJumpReplacementToPatchableBranch32WithPatch(CodeLocationLabel<tag> instructionStart, Address address, int32_t initialValue)
     {
         ASSERT(!address.offset);
         X86Assembler::revertJumpTo_cmpl_im_force32(instructionStart.executableAddress(), initialValue, 0, address.base);
     }
 
-    static void repatchCall(CodeLocationCall call, CodeLocationLabel destination)
+    template<PtrTag callTag, PtrTag destTag>
+    static void repatchCall(CodeLocationCall<callTag> call, CodeLocationLabel<destTag> destination)
     {
         X86Assembler::relinkCall(call.dataLocation(), destination.executableAddress());
     }
 
-    static void repatchCall(CodeLocationCall call, FunctionPtr destination)
+    template<PtrTag callTag, PtrTag destTag>
+    static void repatchCall(CodeLocationCall<callTag> call, FunctionPtr<destTag> destination)
     {
         X86Assembler::relinkCall(call.dataLocation(), destination.executableAddress());
     }
@@ -366,12 +370,13 @@ public:
 private:
     friend class LinkBuffer;
 
-    static void linkCall(void* code, Call call, FunctionPtr function)
+    template<PtrTag tag>
+    static void linkCall(void* code, Call call, FunctionPtr<tag> function)
     {
         if (call.isFlagSet(Call::Tail))
-            X86Assembler::linkJump(code, call.m_label, function.value());
+            X86Assembler::linkJump(code, call.m_label, function.executableAddress());
         else
-            X86Assembler::linkCall(code, call.m_label, function.value());
+            X86Assembler::linkCall(code, call.m_label, function.executableAddress());
     }
 };
 

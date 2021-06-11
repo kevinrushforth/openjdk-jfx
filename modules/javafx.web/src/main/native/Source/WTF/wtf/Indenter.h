@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef Indenter_h
-#define Indenter_h
+#pragma once
 
 #include <wtf/PrintStream.h>
 #include <wtf/text/WTFString.h>
@@ -32,8 +31,9 @@
 namespace WTF {
 
 class Indenter {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
-    Indenter(unsigned count = 0, String string = ASCIILiteral("  "))
+    Indenter(unsigned count = 0, String string = "  "_s)
         : m_count(count)
         , m_string(string)
     { }
@@ -63,5 +63,3 @@ private:
 } // namespace WTF
 
 using WTF::Indenter;
-
-#endif // Indenter_h

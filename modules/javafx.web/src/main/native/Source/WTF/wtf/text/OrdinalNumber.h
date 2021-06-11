@@ -30,6 +30,7 @@ namespace WTF {
 // This type should be used instead of integer because 2 contradicting traditions can
 // call a first element '0' or '1' which makes integer type ambiguous.
 class OrdinalNumber {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     static OrdinalNumber beforeFirst() { return OrdinalNumber(-1); }
     static OrdinalNumber fromZeroBasedInt(int zeroBasedInt) { return OrdinalNumber(zeroBasedInt); }
@@ -40,9 +41,9 @@ public:
     int zeroBasedInt() const { return m_zeroBasedValue; }
     int oneBasedInt() const { return m_zeroBasedValue + 1; }
 
-    bool operator==(OrdinalNumber other) { return m_zeroBasedValue == other.m_zeroBasedValue; }
-    bool operator!=(OrdinalNumber other) { return !((*this) == other); }
-    bool operator>(OrdinalNumber other) { return m_zeroBasedValue > other.m_zeroBasedValue; }
+    bool operator==(OrdinalNumber other) const { return m_zeroBasedValue == other.m_zeroBasedValue; }
+    bool operator!=(OrdinalNumber other) const { return !((*this) == other); }
+    bool operator>(OrdinalNumber other) const { return m_zeroBasedValue > other.m_zeroBasedValue; }
 
 private:
     OrdinalNumber(int zeroBasedInt) : m_zeroBasedValue(zeroBasedInt) { }

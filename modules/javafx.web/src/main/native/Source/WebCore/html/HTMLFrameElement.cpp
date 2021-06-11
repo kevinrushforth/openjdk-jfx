@@ -28,8 +28,11 @@
 #include "HTMLFrameSetElement.h"
 #include "HTMLNames.h"
 #include "RenderFrame.h"
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(HTMLFrameElement);
 
 using namespace HTMLNames;
 
@@ -48,7 +51,7 @@ Ref<HTMLFrameElement> HTMLFrameElement::create(const QualifiedName& tagName, Doc
 bool HTMLFrameElement::rendererIsNeeded(const RenderStyle&)
 {
     // For compatibility, frames render even when display: none is set.
-    return isURLAllowed();
+    return canLoad();
 }
 
 RenderPtr<RenderElement> HTMLFrameElement::createElementRenderer(RenderStyle&& style, const RenderTreePosition&)
@@ -71,7 +74,12 @@ void HTMLFrameElement::didAttachRenderers()
         m_frameBorder = containingFrameSet->hasFrameBorder();
 }
 
-void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+int HTMLFrameElement::defaultTabIndex() const
+{
+    return 0;
+}
+
+void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomString& value)
 {
     if (name == frameborderAttr) {
         m_frameBorder = value.toInt();

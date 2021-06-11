@@ -32,46 +32,58 @@
 #include "ImageBitmap.h"
 #include "ScriptExecutionContext.h"
 #include "Supplementable.h"
-#include "URL.h"
+#include <wtf/URL.h>
 #include "WorkerCacheStorageConnection.h"
-#include "WorkerEventQueue.h"
+#include "WorkerMessagePortChannelProvider.h"
 #include "WorkerScriptController.h"
 #include <JavaScriptCore/ConsoleMessage.h>
 #include <memory>
-#include <pal/SessionID.h>
 
 namespace WebCore {
 
+class CSSValuePool;
 class ContentSecurityPolicyResponseHeaders;
 class Crypto;
+class EventLoopTaskGroup;
 class Performance;
 class ScheduledAction;
+class WorkerEventLoop;
 class WorkerInspectorController;
 class WorkerLocation;
 class WorkerNavigator;
+class WorkerSWClientConnection;
 class WorkerThread;
+struct WorkerParameters;
 
 namespace IDBClient {
 class IDBConnectionProxy;
 }
 
 class WorkerGlobalScope : public RefCounted<WorkerGlobalScope>, public Supplementable<WorkerGlobalScope>, public ScriptExecutionContext, public EventTargetWithInlineData, public Base64Utilities {
+    WTF_MAKE_ISO_ALLOCATED(WorkerGlobalScope);
 public:
     virtual ~WorkerGlobalScope();
 
     virtual bool isDedicatedWorkerGlobalScope() const { return false; }
     virtual bool isServiceWorkerGlobalScope() const { return false; }
 
+    EventLoopTaskGroup& eventLoop() final;
+
     const URL& url() const final { return m_url; }
-    String origin() const final;
+    String origin() const;
     const String& identifier() const { return m_identifier; }
 
 #if ENABLE(INDEXED_DATABASE)
     IDBClient::IDBConnectionProxy* idbConnectionProxy() final;
-    void stopIndexedDatabase();
+    void suspend();
+    void resume();
 #endif
 
     WorkerCacheStorageConnection& cacheStorageConnection();
+    MessagePortChannelProvider& messagePortChannelProvider();
+#if ENABLE(SERVICE_WORKER)
+    WorkerSWClientConnection& swClientConnection();
+#endif
 
     WorkerScriptController* script() { return m_script.get(); }
     void clearScript() { m_script = nullptr; }
@@ -93,9 +105,9 @@ public:
 
     void setIsOnline(bool);
 
-    ExceptionOr<int> setTimeout(JSC::ExecState&, std::unique_ptr<ScheduledAction>, int timeout, Vector<JSC::Strong<JSC::Unknown>>&& arguments);
+    ExceptionOr<int> setTimeout(JSC::JSGlobalObject&, std::unique_ptr<ScheduledAction>, int timeout, Vector<JSC::Strong<JSC::Unknown>>&& arguments);
     void clearTimeout(int timeoutId);
-    ExceptionOr<int> setInterval(JSC::ExecState&, std::unique_ptr<ScheduledAction>, int timeout, Vector<JSC::Strong<JSC::Unknown>>&& arguments);
+    ExceptionOr<int> setInterval(JSC::JSGlobalObject&, std::unique_ptr<ScheduledAction>, int timeout, Vector<JSC::Strong<JSC::Unknown>>&& arguments);
     void clearInterval(int timeoutId);
 
     bool isContextThread() const final;
@@ -111,8 +123,12 @@ public:
 
     void addConsoleMessage(std::unique_ptr<Inspector::ConsoleMessage>&&) final;
 
+    SecurityOrigin& topOrigin() const final { return m_topOrigin.get(); }
+
     Crypto& crypto();
     Performance& performance() const;
+
+    void prepareForTermination();
 
     void removeAllEventListeners() final;
 
@@ -121,8 +137,14 @@ public:
 
     unsigned long createUniqueIdentifier() { return m_uniqueIdentifier++; }
 
+    CSSValuePool& cssValuePool();
+
+    ReferrerPolicy referrerPolicy() const final;
+
+    bool requestAnimationFrameEnabled() const { return m_requestAnimationFrameEnabled; }
+
 protected:
-    WorkerGlobalScope(const URL&, const String& identifier, const String& userAgent, bool isOnline, WorkerThread&, bool shouldBypassMainWorldContentSecurityPolicy, Ref<SecurityOrigin>&& topOrigin, MonotonicTime timeOrigin, IDBClient::IDBConnectionProxy*, SocketProvider*, PAL::SessionID);
+    WorkerGlobalScope(const WorkerParameters&, Ref<SecurityOrigin>&&, WorkerThread&, Ref<SecurityOrigin>&& topOrigin, IDBClient::IDBConnectionProxy*, SocketProvider*);
 
     void applyContentSecurityPolicyResponseHeaders(const ContentSecurityPolicyResponseHeaders&);
 
@@ -137,36 +159,30 @@ private:
 
     // The following addMessage and addConsoleMessage functions are deprecated.
     // Callers should try to create the ConsoleMessage themselves.
-    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, RefPtr<Inspector::ScriptCallStack>&&, JSC::ExecState*, unsigned long requestIdentifier) final;
+    void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, unsigned columnNumber, RefPtr<Inspector::ScriptCallStack>&&, JSC::JSGlobalObject*, unsigned long requestIdentifier) final;
     void addConsoleMessage(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier) final;
 
     bool isWorkerGlobalScope() const final { return true; }
 
     ScriptExecutionContext* scriptExecutionContext() const final { return const_cast<WorkerGlobalScope*>(this); }
-    URL completeURL(const String&) const final;
-    PAL::SessionID sessionID() const final { return m_sessionID; }
+    URL completeURL(const String&, ForceUTF8 = ForceUTF8::No) const final;
     String userAgent(const URL&) const final;
     void disableEval(const String& errorMessage) final;
     void disableWebAssembly(const String& errorMessage) final;
     EventTarget* errorEventTarget() final;
-    WorkerEventQueue& eventQueue() const final;
     String resourceRequestIdentifier() const final { return m_identifier; }
     SocketProvider* socketProvider() final;
 
     bool shouldBypassMainWorldContentSecurityPolicy() const final { return m_shouldBypassMainWorldContentSecurityPolicy; }
     bool isJSExecutionForbidden() const final;
-    SecurityOrigin& topOrigin() const final { return m_topOrigin.get(); }
 
-#if ENABLE(SUBTLE_CRYPTO)
-    // The following two functions are side effects of providing extra protection to serialized
-    // CryptoKey data that went through the structured clone algorithm to local storage such as
-    // IndexedDB. They don't provide any proctection against communications between mainThread
-    // and workerThreads. In fact, they cause extra expense as workerThreads cannot talk to clients
-    // to unwrap/wrap crypto keys. Hence, workerThreads must always ask mainThread to unwrap/wrap
-    // keys, which results in a second communication and plain keys being transferred between
-    // workerThreads and the mainThread.
+#if ENABLE(WEB_CRYPTO)
     bool wrapCryptoKey(const Vector<uint8_t>& key, Vector<uint8_t>& wrappedKey) final;
     bool unwrapCryptoKey(const Vector<uint8_t>& wrappedKey, Vector<uint8_t>& key) final;
+#endif
+
+#if ENABLE(INDEXED_DATABASE)
+    void stopIndexedDatabase();
 #endif
 
     URL m_url;
@@ -184,7 +200,8 @@ private:
     bool m_isOnline;
     bool m_shouldBypassMainWorldContentSecurityPolicy;
 
-    mutable WorkerEventQueue m_eventQueue;
+    RefPtr<WorkerEventLoop> m_eventLoop;
+    std::unique_ptr<EventLoopTaskGroup> m_defaultTaskGroup;
 
     Ref<SecurityOrigin> m_topOrigin;
 
@@ -197,10 +214,15 @@ private:
     RefPtr<Performance> m_performance;
     mutable RefPtr<Crypto> m_crypto;
 
-    PAL::SessionID m_sessionID;
     RefPtr<WorkerCacheStorageConnection> m_cacheStorageConnection;
-
+    std::unique_ptr<WorkerMessagePortChannelProvider> m_messagePortChannelProvider;
     unsigned long m_uniqueIdentifier { 1 };
+#if ENABLE(SERVICE_WORKER)
+    RefPtr<WorkerSWClientConnection> m_swClientConnection;
+#endif
+    std::unique_ptr<CSSValuePool> m_cssValuePool;
+    ReferrerPolicy m_referrerPolicy;
+    bool m_requestAnimationFrameEnabled;
 };
 
 } // namespace WebCore

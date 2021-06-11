@@ -36,10 +36,9 @@
 #include <wtf/StdLibExtras.h>
 #include <wtf/text/StringHash.h>
 
-extern int xpathyyparse(WebCore::XPath::Parser&);
+using namespace WebCore::XPath;
 
-using namespace WebCore;
-using namespace XPath;
+extern int xpathyyparse(WebCore::XPath::Parser&);
 
 #include "XPathGrammar.h"
 

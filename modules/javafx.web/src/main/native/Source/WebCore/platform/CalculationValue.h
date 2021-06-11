@@ -28,8 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef CalculationValue_h
-#define CalculationValue_h
+#pragma once
 
 #include "Length.h"
 #include <memory>
@@ -43,27 +42,31 @@ class TextStream;
 
 namespace WebCore {
 
-enum CalcOperator {
-    CalcAdd = '+',
-    CalcSubtract = '-',
-    CalcMultiply = '*',
-    CalcDivide = '/',
-    CalcMin = 0,
-    CalcMax = 1,
+// Don't change these values; parsing uses them.
+enum class CalcOperator : uint8_t {
+    Add = '+',
+    Subtract = '-',
+    Multiply = '*',
+    Divide = '/',
+    Min = 0,
+    Max,
+    Clamp,
 };
 
-enum CalcExpressionNodeType {
-    CalcExpressionNodeUndefined,
-    CalcExpressionNodeNumber,
-    CalcExpressionNodeLength,
-    CalcExpressionNodeOperation,
-    CalcExpressionNodeBlendLength,
+enum class CalcExpressionNodeType : uint8_t {
+    Undefined,
+    Number,
+    Length,
+    Operation,
+    Negation,
+    Inversion,
+    BlendLength,
 };
 
 class CalcExpressionNode {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit CalcExpressionNode(CalcExpressionNodeType = CalcExpressionNodeUndefined);
+    explicit CalcExpressionNode(CalcExpressionNodeType = CalcExpressionNodeType::Undefined);
     virtual ~CalcExpressionNode() = default;
 
     CalcExpressionNodeType type() const { return m_type; }
@@ -103,6 +106,48 @@ private:
 
     Length m_length;
 };
+
+class CalcExpressionNegation final : public CalcExpressionNode {
+public:
+    CalcExpressionNegation(std::unique_ptr<CalcExpressionNode>&& node)
+        : CalcExpressionNode(CalcExpressionNodeType::Negation)
+        , m_child(WTFMove(node))
+    {
+        ASSERT(m_child);
+    }
+
+    float evaluate(float maxValue) const final;
+    bool operator==(const CalcExpressionNode&) const final;
+    void dump(WTF::TextStream&) const final;
+
+    const CalcExpressionNode* child() const { return m_child.get(); }
+
+private:
+    std::unique_ptr<CalcExpressionNode> m_child;
+};
+
+bool operator==(const CalcExpressionNegation&, const CalcExpressionNegation&);
+
+class CalcExpressionInversion final : public CalcExpressionNode {
+public:
+    CalcExpressionInversion(std::unique_ptr<CalcExpressionNode>&& node)
+        : CalcExpressionNode(CalcExpressionNodeType::Inversion)
+        , m_child(WTFMove(node))
+    {
+        ASSERT(m_child);
+    }
+
+    float evaluate(float maxValue) const final;
+    bool operator==(const CalcExpressionNode&) const final;
+    void dump(WTF::TextStream&) const final;
+
+    const CalcExpressionNode* child() const { return m_child.get(); }
+
+private:
+    std::unique_ptr<CalcExpressionNode> m_child;
+};
+
+bool operator==(const CalcExpressionInversion&, const CalcExpressionInversion&);
 
 class CalcExpressionOperation final : public CalcExpressionNode {
 public:
@@ -171,7 +216,7 @@ inline bool operator==(const CalculationValue& a, const CalculationValue& b)
 }
 
 inline CalcExpressionNumber::CalcExpressionNumber(float value)
-    : CalcExpressionNode(CalcExpressionNodeNumber)
+    : CalcExpressionNode(CalcExpressionNodeType::Number)
     , m_value(value)
 {
 }
@@ -181,14 +226,8 @@ inline bool operator==(const CalcExpressionNumber& a, const CalcExpressionNumber
     return a.value() == b.value();
 }
 
-inline const CalcExpressionNumber& toCalcExpressionNumber(const CalcExpressionNode& value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value.type() == CalcExpressionNodeNumber);
-    return static_cast<const CalcExpressionNumber&>(value);
-}
-
 inline CalcExpressionLength::CalcExpressionLength(Length length)
-    : CalcExpressionNode(CalcExpressionNodeLength)
+    : CalcExpressionNode(CalcExpressionNodeType::Length)
     , m_length(length)
 {
 }
@@ -198,14 +237,8 @@ inline bool operator==(const CalcExpressionLength& a, const CalcExpressionLength
     return a.length() == b.length();
 }
 
-inline const CalcExpressionLength& toCalcExpressionLength(const CalcExpressionNode& value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value.type() == CalcExpressionNodeLength);
-    return static_cast<const CalcExpressionLength&>(value);
-}
-
 inline CalcExpressionOperation::CalcExpressionOperation(Vector<std::unique_ptr<CalcExpressionNode>>&& children, CalcOperator op)
-    : CalcExpressionNode(CalcExpressionNodeOperation)
+    : CalcExpressionNode(CalcExpressionNodeType::Operation)
     , m_children(WTFMove(children))
     , m_operator(op)
 {
@@ -213,21 +246,9 @@ inline CalcExpressionOperation::CalcExpressionOperation(Vector<std::unique_ptr<C
 
 bool operator==(const CalcExpressionOperation&, const CalcExpressionOperation&);
 
-inline const CalcExpressionOperation& toCalcExpressionOperation(const CalcExpressionNode& value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value.type() == CalcExpressionNodeOperation);
-    return static_cast<const CalcExpressionOperation&>(value);
-}
-
 inline bool operator==(const CalcExpressionBlendLength& a, const CalcExpressionBlendLength& b)
 {
     return a.progress() == b.progress() && a.from() == b.from() && a.to() == b.to();
-}
-
-inline const CalcExpressionBlendLength& toCalcExpressionBlendLength(const CalcExpressionNode& value)
-{
-    ASSERT_WITH_SECURITY_IMPLICATION(value.type() == CalcExpressionNodeBlendLength);
-    return static_cast<const CalcExpressionBlendLength&>(value);
 }
 
 WTF::TextStream& operator<<(WTF::TextStream&, const CalculationValue&);
@@ -236,4 +257,14 @@ WTF::TextStream& operator<<(WTF::TextStream&, CalcOperator);
 
 } // namespace WebCore
 
-#endif // CalculationValue_h
+#define SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(ToValueTypeName, predicate) \
+SPECIALIZE_TYPE_TRAITS_BEGIN(WebCore::ToValueTypeName) \
+    static bool isType(const WebCore::CalcExpressionNode& node) { return node.predicate; } \
+SPECIALIZE_TYPE_TRAITS_END()
+
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionNumber, type() == WebCore::CalcExpressionNodeType::Number)
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionLength, type() == WebCore::CalcExpressionNodeType::Length)
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionOperation, type() == WebCore::CalcExpressionNodeType::Operation)
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionNegation, type() == WebCore::CalcExpressionNodeType::Negation)
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionInversion, type() == WebCore::CalcExpressionNodeType::Inversion)
+SPECIALIZE_TYPE_TRAITS_CALCEXPRESSION_NODE(CalcExpressionBlendLength, type() == WebCore::CalcExpressionNodeType::BlendLength)

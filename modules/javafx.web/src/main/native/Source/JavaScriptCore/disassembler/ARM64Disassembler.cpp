@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,18 +26,18 @@
 #include "config.h"
 #include "Disassembler.h"
 
-#if USE(ARM64_DISASSEMBLER)
+#if ENABLE(ARM64_DISASSEMBLER)
 
 #include "A64DOpcode.h"
 #include "MacroAssemblerCodeRef.h"
 
 namespace JSC {
 
-bool tryToDisassemble(const MacroAssemblerCodePtr& codePtr, size_t size, const char* prefix, PrintStream& out)
+bool tryToDisassemble(const MacroAssemblerCodePtr<DisassemblyPtrTag>& codePtr, size_t size, const char* prefix, PrintStream& out)
 {
     A64DOpcode arm64Opcode;
 
-    uint32_t* currentPC = reinterpret_cast<uint32_t*>(codePtr.executableAddress());
+    uint32_t* currentPC = codePtr.untaggedExecutableAddress<uint32_t*>();
     size_t byteCount = size;
 
     while (byteCount) {
@@ -53,5 +53,5 @@ bool tryToDisassemble(const MacroAssemblerCodePtr& codePtr, size_t size, const c
 
 } // namespace JSC
 
-#endif // USE(ARM64_DISASSEMBLER)
+#endif // ENABLE(ARM64_DISASSEMBLER)
 

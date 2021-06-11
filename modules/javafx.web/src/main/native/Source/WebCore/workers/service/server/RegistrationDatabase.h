@@ -28,7 +28,10 @@
 #if ENABLE(SERVICE_WORKER)
 
 #include "SecurityOrigin.h"
-#include <wtf/CrossThreadTaskHandler.h>
+#include "ServiceWorkerRegistrationKey.h"
+#include <wtf/ThreadSafeRefCounted.h>
+#include <wtf/WeakPtr.h>
+#include <wtf/WorkQueue.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
@@ -39,35 +42,47 @@ struct ServiceWorkerContextData;
 
 WEBCORE_EXPORT String serviceWorkerRegistrationDatabaseFilename(const String& databaseDirectory);
 
-class RegistrationDatabase : public CrossThreadTaskHandler {
+class RegistrationDatabase : public ThreadSafeRefCounted<RegistrationDatabase, WTF::DestructionThread::Main> {
 WTF_MAKE_FAST_ALLOCATED;
 public:
-    RegistrationDatabase(RegistrationStore&, const String& databaseDirectory);
+    static Ref<RegistrationDatabase> create(RegistrationStore& store, String&& databaseDirectory)
+    {
+        return adoptRef(*new RegistrationDatabase(store, WTFMove(databaseDirectory)));
+    }
+
     ~RegistrationDatabase();
 
-    bool isClosed() const { return !m_database; }
-
-    void pushChanges(Vector<ServiceWorkerContextData>&&, WTF::CompletionHandler<void()>&&);
-    void clearAll(WTF::CompletionHandler<void()>&&);
+    void pushChanges(const HashMap<ServiceWorkerRegistrationKey, Optional<ServiceWorkerContextData>>&, CompletionHandler<void()>&&);
+    void clearAll(CompletionHandler<void()>&&);
+    void close(CompletionHandler<void()>&&);
 
 private:
-    // Methods to be run on the task thread
-    void openSQLiteDatabase(const String& fullFilename);
+    RegistrationDatabase(RegistrationStore&, String&& databaseDirectory);
+
+    String databaseDirectoryIsolatedCopy() const { return m_databaseDirectory.isolatedCopy(); }
+
+    void schedulePushChanges(Vector<ServiceWorkerContextData>&&, Vector<ServiceWorkerRegistrationKey>&&, CompletionHandler<void()>&&);
+    void postTaskToWorkQueue(Function<void()>&&);
+
+    // Methods to be run on the work queue.
+    bool openSQLiteDatabase(const String& fullFilename);
     String ensureValidRecordsTable();
     String importRecords();
     void importRecordsIfNecessary();
-    void doPushChanges(Vector<ServiceWorkerContextData>&&);
+    bool doPushChanges(const Vector<ServiceWorkerContextData>&, const Vector<ServiceWorkerRegistrationKey>&);
     void doClearOrigin(const SecurityOrigin&);
 
-    // Replies to the main thread
+    // Replies to the main thread.
     void addRegistrationToStore(ServiceWorkerContextData&&);
     void databaseFailedToOpen();
     void databaseOpenedAndRecordsImported();
 
-    RegistrationStore& m_store;
+    Ref<WorkQueue> m_workQueue;
+    WeakPtr<RegistrationStore> m_store;
     String m_databaseDirectory;
     String m_databaseFilePath;
     std::unique_ptr<SQLiteDatabase> m_database;
+    uint64_t m_pushCounter { 0 };
 };
 
 } // namespace WebCore

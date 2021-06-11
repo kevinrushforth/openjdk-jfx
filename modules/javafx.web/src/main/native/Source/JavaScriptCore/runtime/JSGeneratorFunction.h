@@ -32,9 +32,8 @@ namespace JSC {
 
 class JSGlobalObject;
 class LLIntOffsetsExtractor;
-class LLIntDesiredOffsets;
 
-class JSGeneratorFunction : public JSFunction {
+class JSGeneratorFunction final : public JSFunction {
     friend class JIT;
 #if ENABLE(DFG_JIT)
     friend class DFG::SpeculativeJIT;
@@ -42,36 +41,9 @@ class JSGeneratorFunction : public JSFunction {
 #endif
     friend class VM;
 public:
-    typedef JSFunction Base;
+    using Base = JSFunction;
 
-    enum class GeneratorResumeMode : int32_t {
-        NormalMode = 0,
-        ReturnMode = 1,
-        ThrowMode = 2
-    };
-
-    enum class GeneratorState : int32_t {
-        Completed = -1,
-        Executing = -2,
-    };
-
-    // [this], @generator, @generatorState, @generatorValue, @generatorResumeMode, @generatorFrame.
-    enum class GeneratorArgument : int32_t {
-        ThisValue = 0,
-        Generator = 1,
-        State = 2,
-        Value = 3,
-        ResumeMode = 4,
-        Frame = 5,
-    };
-
-    const static unsigned StructureFlags = Base::StructureFlags;
-
-    template<typename CellType>
-    static IsoSubspace* subspaceFor(VM& vm)
-    {
-        return &vm.generatorFunctionSpace;
-    }
+    static constexpr unsigned StructureFlags = Base::StructureFlags;
 
     DECLARE_EXPORT_INFO;
 
@@ -98,5 +70,6 @@ private:
 
     friend class LLIntOffsetsExtractor;
 };
+static_assert(sizeof(JSGeneratorFunction) == sizeof(JSFunction), "Some subclasses of JSFunction should be the same size to share IsoSubspace");
 
 } // namespace JSC

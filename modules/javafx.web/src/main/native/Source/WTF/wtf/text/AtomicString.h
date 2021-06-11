@@ -18,14 +18,17 @@
  *
  */
 
-#ifndef AtomicString_h
-#define AtomicString_h
+#pragma once
 
 #include <utility>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/AtomicStringImpl.h>
 #include <wtf/text/IntegerToStringConversion.h>
 #include <wtf/text/WTFString.h>
+
+#if OS(WINDOWS)
+#include <wtf/text/win/WCharStringExtras.h>
+#endif
 
 // Define 'NO_IMPLICIT_ATOMICSTRING' before including this header,
 // to disallow (expensive) implicit String-->AtomicString conversions.
@@ -104,11 +107,12 @@ public:
 
     UChar operator[](unsigned int i) const { return m_string[i]; }
 
-    WTF_EXPORT_STRING_API static AtomicString number(int);
-    WTF_EXPORT_STRING_API static AtomicString number(unsigned);
-    WTF_EXPORT_STRING_API static AtomicString number(unsigned long);
-    WTF_EXPORT_STRING_API static AtomicString number(unsigned long long);
-    WTF_EXPORT_STRING_API static AtomicString number(double);
+    WTF_EXPORT_PRIVATE static AtomicString number(int);
+    WTF_EXPORT_PRIVATE static AtomicString number(unsigned);
+    WTF_EXPORT_PRIVATE static AtomicString number(unsigned long);
+    WTF_EXPORT_PRIVATE static AtomicString number(unsigned long long);
+    WTF_EXPORT_PRIVATE static AtomicString number(float);
+    WTF_EXPORT_PRIVATE static AtomicString number(double);
     // If we need more overloads of the number function, we can add all the others that String has, but these seem to do for now.
 
     bool contains(UChar character) const { return m_string.contains(character); }
@@ -133,8 +137,8 @@ public:
     bool endsWith(UChar character) const { return m_string.endsWith(character); }
     template<unsigned matchLength> bool endsWith(const char (&prefix)[matchLength]) const { return m_string.endsWith<matchLength>(prefix); }
 
-    WTF_EXPORT_STRING_API AtomicString convertToASCIILowercase() const;
-    WTF_EXPORT_STRING_API AtomicString convertToASCIIUppercase() const;
+    WTF_EXPORT_PRIVATE AtomicString convertToASCIILowercase() const;
+    WTF_EXPORT_PRIVATE AtomicString convertToASCIIUppercase() const;
 
     int toInt(bool* ok = 0) const { return m_string.toInt(ok); }
     double toDouble(bool* ok = 0) const { return m_string.toDouble(ok); }
@@ -153,6 +157,14 @@ public:
     operator NSString*() const { return m_string; }
 #endif
 
+#if OS(WINDOWS) && U_ICU_VERSION_MAJOR_NUM >= 59 && !PLATFORM(JAVA)
+    AtomicString(const wchar_t* characters, unsigned length)
+        : AtomicString(ucharFrom(characters), length) { }
+
+    AtomicString(const wchar_t* characters)
+        : AtomicString(ucharFrom(characters)) { }
+#endif
+
     // AtomicString::fromUTF8 will return a null string if the input data contains invalid UTF-8 sequences.
     static AtomicString fromUTF8(const char*, size_t);
     static AtomicString fromUTF8(const char*);
@@ -168,7 +180,7 @@ private:
     enum class CaseConvertType { Upper, Lower };
     template<CaseConvertType> AtomicString convertASCIICase() const;
 
-    WTF_EXPORT_STRING_API static AtomicString fromUTF8Internal(const char*, const char*);
+    WTF_EXPORT_PRIVATE static AtomicString fromUTF8Internal(const char*, const char*);
 
     String m_string;
 };
@@ -284,11 +296,11 @@ inline AtomicString::AtomicString(NSString* string)
 
 // Define external global variables for the commonly used atomic strings.
 // These are only usable from the main thread.
-extern WTF_EXPORTDATA LazyNeverDestroyed<AtomicString> nullAtomData;
-extern WTF_EXPORTDATA LazyNeverDestroyed<AtomicString> emptyAtomData;
-extern WTF_EXPORTDATA LazyNeverDestroyed<AtomicString> starAtomData;
-extern WTF_EXPORTDATA LazyNeverDestroyed<AtomicString> xmlAtomData;
-extern WTF_EXPORTDATA LazyNeverDestroyed<AtomicString> xmlnsAtomData;
+extern WTF_EXPORT_PRIVATE LazyNeverDestroyed<AtomicString> nullAtomData;
+extern WTF_EXPORT_PRIVATE LazyNeverDestroyed<AtomicString> emptyAtomData;
+extern WTF_EXPORT_PRIVATE LazyNeverDestroyed<AtomicString> starAtomData;
+extern WTF_EXPORT_PRIVATE LazyNeverDestroyed<AtomicString> xmlAtomData;
+extern WTF_EXPORT_PRIVATE LazyNeverDestroyed<AtomicString> xmlnsAtomData;
 
 inline const AtomicString& nullAtom() { return nullAtomData.get(); }
 inline const AtomicString& emptyAtom() { return emptyAtomData.get(); }
@@ -363,5 +375,3 @@ using WTF::xmlnsAtom;
 #endif
 
 #include <wtf/text/StringConcatenate.h>
-
-#endif // AtomicString_h

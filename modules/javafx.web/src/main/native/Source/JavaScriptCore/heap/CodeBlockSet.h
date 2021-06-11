@@ -43,8 +43,8 @@ class VM;
 // once they hasOneRef() and nobody is running code from that CodeBlock.
 
 class CodeBlockSet {
+    WTF_MAKE_FAST_ALLOCATED;
     WTF_MAKE_NONCOPYABLE(CodeBlockSet);
-
 public:
     CodeBlockSet();
     ~CodeBlockSet();
@@ -55,6 +55,10 @@ public:
 
     bool contains(const AbstractLocker&, void* candidateCodeBlock);
     Lock& getLock() { return m_lock; }
+
+    // This is expected to run only when we're not adding to the set for now. If
+    // this needs to run concurrently in the future, we'll need to lock around this.
+    bool isCurrentlyExecuting(CodeBlock*);
 
     // Visits each CodeBlock in the heap until the visitor function returns true
     // to indicate that it is done iterating, or until every CodeBlock has been

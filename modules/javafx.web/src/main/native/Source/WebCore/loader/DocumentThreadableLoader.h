@@ -81,12 +81,12 @@ namespace WebCore {
 
         // CachedRawResourceClient
         void dataSent(CachedResource&, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
-        void responseReceived(CachedResource&, const ResourceResponse&) override;
+        void responseReceived(CachedResource&, const ResourceResponse&, CompletionHandler<void()>&&) override;
         void dataReceived(CachedResource&, const char* data, int dataLength) override;
         void redirectReceived(CachedResource&, ResourceRequest&&, const ResourceResponse&, CompletionHandler<void(ResourceRequest&&)>&&) override;
         void finishedTimingForWorkerLoad(CachedResource&, const ResourceTiming&) override;
         void finishedTimingForWorkerLoad(const ResourceTiming&);
-        void notifyFinished(CachedResource&) override;
+        void notifyFinished(CachedResource&, const NetworkLoadMetrics&) override;
 
         void didReceiveResponse(unsigned long identifier, const ResourceResponse&);
         void didReceiveData(unsigned long identifier, const char* data, int dataLength);
@@ -102,8 +102,6 @@ namespace WebCore {
         bool isAllowedRedirect(const URL&);
         bool isAllowedByContentSecurityPolicy(const URL&, ContentSecurityPolicy::RedirectResponseReceived);
 
-        bool isXMLHttpRequest() const final;
-
         SecurityOrigin& securityOrigin() const;
         const ContentSecurityPolicy& contentSecurityPolicy() const;
 
@@ -115,13 +113,17 @@ namespace WebCore {
         void reportRedirectionWithBadScheme(const URL&);
         void reportContentSecurityPolicyError(const URL&);
         void reportCrossOriginResourceSharingError(const URL&);
-        void reportIntegrityMetadataError(const URL&);
+        void reportIntegrityMetadataError(const CachedResource&, const String& expectedMetadata);
         void logErrorAndFail(const ResourceError&);
+
+        bool shouldSetHTTPHeadersToKeep() const;
+        bool checkURLSchemeAsCORSEnabled(const URL&);
 
         CachedResourceHandle<CachedRawResource> m_resource;
         ThreadableLoaderClient* m_client;
         Document& m_document;
         ThreadableLoaderOptions m_options;
+        bool m_responsesCanBeOpaque { true };
         RefPtr<SecurityOrigin> m_origin;
         String m_referrer;
         bool m_sameOriginRequest;
@@ -129,12 +131,12 @@ namespace WebCore {
         bool m_async;
         bool m_delayCallbacksForIntegrityCheck;
         std::unique_ptr<ContentSecurityPolicy> m_contentSecurityPolicy;
-        std::optional<CrossOriginPreflightChecker> m_preflightChecker;
-        std::optional<HTTPHeaderMap> m_originalHeaders;
+        Optional<CrossOriginPreflightChecker> m_preflightChecker;
+        Optional<HTTPHeaderMap> m_originalHeaders;
 
         ShouldLogError m_shouldLogError;
 #if ENABLE(SERVICE_WORKER)
-        std::optional<ResourceRequest> m_bypassingPreflightForServiceWorkerRequest;
+        Optional<ResourceRequest> m_bypassingPreflightForServiceWorkerRequest;
 #endif
     };
 

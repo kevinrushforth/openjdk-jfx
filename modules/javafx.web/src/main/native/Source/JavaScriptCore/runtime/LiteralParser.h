@@ -92,8 +92,9 @@ ALWAYS_INLINE void setParserTokenString(LiteralParserToken<CharType>&, const Cha
 template <typename CharType>
 class LiteralParser {
 public:
-    LiteralParser(ExecState* exec, const CharType* characters, unsigned length, ParserMode mode)
-        : m_exec(exec)
+    LiteralParser(JSGlobalObject* globalObject, const CharType* characters, unsigned length, ParserMode mode, CodeBlock* nullOrCodeBlock = nullptr)
+        : m_globalObject(globalObject)
+        , m_nullOrCodeBlock(nullOrCodeBlock)
         , m_lexer(characters, length, mode)
         , m_mode(mode)
     {
@@ -102,10 +103,10 @@ public:
     String getErrorMessage()
     {
         if (!m_lexer.getErrorMessage().isEmpty())
-            return String::format("JSON Parse error: %s", m_lexer.getErrorMessage().ascii().data());
+            return "JSON Parse error: " + m_lexer.getErrorMessage();
         if (!m_parseErrorMessage.isEmpty())
-            return String::format("JSON Parse error: %s", m_parseErrorMessage.ascii().data());
-        return ASCIILiteral("JSON Parse error: Unable to parse JSON string");
+            return "JSON Parse error: " + m_parseErrorMessage;
+        return "JSON Parse error: Unable to parse JSON string"_s;
     }
 
     JSValue tryLiteralParse()
@@ -133,7 +134,7 @@ private:
 
         TokenType next();
 
-#if ASSERT_DISABLED
+#if !ASSERT_ENABLED
         typedef const LiteralParserToken<CharType>* LiteralParserTokenPtr;
 
         LiteralParserTokenPtr currentToken()
@@ -166,23 +167,23 @@ private:
         {
             return LiteralParserTokenPtr(*this);
         }
-#endif
+#endif // ASSERT_ENABLED
 
         String getErrorMessage() { return m_lexErrorMessage; }
 
     private:
         String m_lexErrorMessage;
-        template <ParserMode mode> TokenType lex(LiteralParserToken<CharType>&);
+        TokenType lex(LiteralParserToken<CharType>&);
         ALWAYS_INLINE TokenType lexIdentifier(LiteralParserToken<CharType>&);
-        template <ParserMode mode, char terminator> ALWAYS_INLINE TokenType lexString(LiteralParserToken<CharType>&);
-        template <ParserMode mode, char terminator> TokenType lexStringSlow(LiteralParserToken<CharType>&, const CharType* runStart);
+        ALWAYS_INLINE TokenType lexString(LiteralParserToken<CharType>&, CharType terminator);
+        TokenType lexStringSlow(LiteralParserToken<CharType>&, const CharType* runStart, CharType terminator);
         ALWAYS_INLINE TokenType lexNumber(LiteralParserToken<CharType>&);
         LiteralParserToken<CharType> m_currentToken;
         ParserMode m_mode;
         const CharType* m_ptr;
         const CharType* m_end;
         StringBuilder m_builder;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
         unsigned m_currentTokenID { 0 };
 #endif
     };
@@ -190,7 +191,8 @@ private:
     class StackGuard;
     JSValue parse(ParserState);
 
-    ExecState* m_exec;
+    JSGlobalObject* m_globalObject;
+    CodeBlock* m_nullOrCodeBlock;
     typename LiteralParser<CharType>::Lexer m_lexer;
     ParserMode m_mode;
     String m_parseErrorMessage;

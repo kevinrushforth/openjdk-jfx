@@ -24,26 +24,23 @@
  */
 
 #include "config.h"
-#include "ParkingLot.h"
+#include <wtf/ParkingLot.h>
 
-#include "CurrentTime.h"
-#include "DataLog.h"
-#include "HashFunctions.h"
-#include "StringPrintStream.h"
-#include "ThreadSpecific.h"
-#include "Threading.h"
-#include "Vector.h"
-#include "WeakRandom.h"
-#include "WordLock.h"
-#include <condition_variable>
 #include <mutex>
-#include <thread>
+#include <wtf/DataLog.h>
+#include <wtf/HashFunctions.h>
+#include <wtf/StringPrintStream.h>
+#include <wtf/ThreadSpecific.h>
+#include <wtf/Threading.h>
+#include <wtf/Vector.h>
+#include <wtf/WeakRandom.h>
+#include <wtf/WordLock.h>
 
 namespace WTF {
 
 namespace {
 
-const bool verbose = false;
+static constexpr bool verbose = false;
 
 struct ThreadData : public ThreadSafeRefCounted<ThreadData> {
     WTF_MAKE_FAST_ALLOCATED;
@@ -133,7 +130,7 @@ public:
         ThreadData** currentPtr = &queueHead;
         ThreadData* previous = nullptr;
 
-        double time = monotonicallyIncreasingTimeMS();
+        MonotonicTime time = MonotonicTime::now();
         bool timeToBeFair = false;
         if (time > nextFairTime)
             timeToBeFair = true;
@@ -170,7 +167,7 @@ public:
         }
 
         if (timeToBeFair && didDequeue)
-            nextFairTime = time + random.get();
+            nextFairTime = time + Seconds::fromMilliseconds(random.get());
 
         ASSERT(!!queueHead == !!queueTail);
     }
@@ -193,7 +190,7 @@ public:
     // this lock.
     WordLock lock;
 
-    double nextFairTime { 0 };
+    MonotonicTime nextFairTime;
 
     WeakRandom random;
 
@@ -206,7 +203,7 @@ struct Hashtable;
 
 // We track all allocated hashtables so that hashtable resizing doesn't anger leak detectors.
 Vector<Hashtable*>* hashtables;
-StaticWordLock hashtablesLock;
+WordLock hashtablesLock;
 
 struct Hashtable {
     unsigned size;
@@ -356,7 +353,8 @@ void ensureHashtableSize(unsigned numThreads)
     // Check again, since the hashtable could have rehashed while we were locking it. Also,
     // lockHashtable() creates an initial hashtable for us.
     oldHashtable = hashtable.load();
-    if (oldHashtable && static_cast<double>(oldHashtable->size) / static_cast<double>(numThreads) >= maxLoadFactor) {
+    RELEASE_ASSERT(oldHashtable);
+    if (static_cast<double>(oldHashtable->size) / static_cast<double>(numThreads) >= maxLoadFactor) {
         if (verbose)
             dataLog(toString(Thread::current(), ": after locking, no need to rehash because ", oldHashtable->size, " / ", numThreads, " >= ", maxLoadFactor, "\n"));
         unlockHashtable(bucketsToUnlock);

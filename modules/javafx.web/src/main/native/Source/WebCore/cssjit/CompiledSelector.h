@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,38 +27,38 @@
 
 #if ENABLE(CSS_SELECTOR_JIT)
 
+#include "CSSPtrTag.h"
+#include "CSSSelector.h"
 #include <JavaScriptCore/MacroAssemblerCodeRef.h>
+
+#define CSS_SELECTOR_JIT_PROFILING 0
 
 namespace WebCore {
 
-class SelectorCompilationStatus {
-public:
-    enum Status {
-        NotCompiled,
-        CannotCompile,
-        SimpleSelectorChecker,
-        SelectorCheckerWithCheckingContext
-    };
-
-    SelectorCompilationStatus()
-        : m_status(NotCompiled)
-    { }
-
-    SelectorCompilationStatus(Status status)
-        : m_status(status)
-    { }
-
-    operator Status() const { return m_status; }
-
-private:
-    Status m_status;
+enum class SelectorCompilationStatus : uint8_t {
+    NotCompiled,
+    CannotCompile,
+    SimpleSelectorChecker,
+    SelectorCheckerWithCheckingContext
 };
 
 struct CompiledSelector {
-    SelectorCompilationStatus status;
-    JSC::MacroAssemblerCodeRef codeRef;
+    WTF_MAKE_STRUCT_FAST_ALLOCATED;
+    SelectorCompilationStatus status { SelectorCompilationStatus::NotCompiled };
+    JSC::MacroAssemblerCodeRef<CSSSelectorPtrTag> codeRef;
+
 #if defined(CSS_SELECTOR_JIT_PROFILING) && CSS_SELECTOR_JIT_PROFILING
     unsigned useCount { 0 };
+    const CSSSelector* selector { nullptr };
+    void wasUsed() { ++useCount; }
+
+    ~CompiledSelector()
+    {
+        if (codeRef.code().executableAddress())
+            dataLogF("CompiledSelector %d \"%s\"\n", useCount, selector->selectorText().utf8().data());
+    }
+#else
+    void wasUsed() { }
 #endif
 };
 

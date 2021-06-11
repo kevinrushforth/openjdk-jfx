@@ -29,9 +29,14 @@ import logging
 import string
 from string import Template
 
-from generator import Generator, ucfirst
-from objc_generator import ObjCGenerator
-from objc_generator_templates import ObjCGeneratorTemplates as ObjCTemplates
+try:
+    from .generator import Generator, ucfirst
+    from .objc_generator import ObjCGenerator
+    from .objc_generator_templates import ObjCGeneratorTemplates as ObjCTemplates
+except ValueError:
+    from generator import Generator, ucfirst
+    from objc_generator import ObjCGenerator
+    from objc_generator_templates import ObjCGeneratorTemplates as ObjCTemplates
 
 log = logging.getLogger('global')
 
@@ -55,20 +60,21 @@ class ObjCInternalHeaderGenerator(ObjCGenerator):
             'includes': '\n'.join(['#import ' + header for header in sorted(headers)]),
         }
 
-        event_domains = filter(self.should_generate_events_for_domain, self.domains_to_generate())
+        event_domains = list(filter(self.should_generate_events_for_domain, self.domains_to_generate()))
 
         sections = []
         sections.append(self.generate_license())
         sections.append(Template(ObjCTemplates.GenericHeaderPrelude).substitute(None, **header_args))
-        sections.append('\n\n'.join(filter(None, map(self._generate_event_dispatcher_private_interfaces, event_domains))))
+        sections.append('\n\n'.join([_f for _f in map(self._generate_event_dispatcher_private_interfaces, event_domains) if _f]))
         sections.append(Template(ObjCTemplates.GenericHeaderPostlude).substitute(None, **header_args))
         return '\n\n'.join(sections)
 
     def _generate_event_dispatcher_private_interfaces(self, domain):
+        if not len(self.events_for_domain(domain)):
+            return ''
+
         lines = []
-        if len(self.events_for_domain(domain)):
-            objc_name = '%s%sDomainEventDispatcher' % (self.objc_prefix(), domain.domain_name)
-            lines.append('@interface %s (Private)' % objc_name)
-            lines.append('- (instancetype)initWithController:(Inspector::AugmentableInspectorController*)controller;')
-            lines.append('@end')
-        return '\n'.join(lines)
+        lines.append('@interface %s%sDomainEventDispatcher (Private)' % (self.objc_prefix(), domain.domain_name))
+        lines.append('- (instancetype)initWithController:(Inspector::AugmentableInspectorController*)controller;')
+        lines.append('@end')
+        return self.wrap_with_guard_for_condition(domain.condition, '\n'.join(lines))

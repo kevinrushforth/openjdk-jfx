@@ -36,12 +36,11 @@ class RenderFragmentContainer;
 struct BidiStatus;
 struct GapRects;
 
-class RootInlineBox : public InlineFlowBox {
+class RootInlineBox : public InlineFlowBox, public CanMakeWeakPtr<RootInlineBox> {
     WTF_MAKE_ISO_ALLOCATED(RootInlineBox);
 public:
     explicit RootInlineBox(RenderBlockFlow&);
     virtual ~RootInlineBox();
-    WeakPtr<RootInlineBox> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(*this); }
 
     RenderBlockFlow& blockFlow() const;
 
@@ -73,7 +72,8 @@ public:
     void setContainingFragment(RenderFragmentContainer&);
     void clearContainingFragment();
 
-    LayoutUnit selectionTop() const;
+    enum class ForHitTesting : bool { No, Yes };
+    LayoutUnit selectionTop(ForHitTesting = ForHitTesting::No) const;
     LayoutUnit selectionBottom() const;
     LayoutUnit selectionHeight() const { return std::max<LayoutUnit>(0, selectionBottom() - selectionTop()); }
 
@@ -105,7 +105,7 @@ public:
 
     bool lineCanAccommodateEllipsis(bool ltr, int blockEdge, int lineBoxEdge, int ellipsisWidth);
     // Return the truncatedWidth, the width of the truncated text + ellipsis.
-    float placeEllipsis(const AtomicString& ellipsisStr, bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, InlineBox* markupBox = nullptr);
+    float placeEllipsis(const AtomString& ellipsisStr, bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, InlineBox* markupBox = nullptr);
     // Return the position of the EllipsisBox or -1.
     float placeEllipsisBox(bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, float &truncatedWidth, bool& foundBox) final;
 
@@ -127,7 +127,7 @@ public:
     using InlineBox::hasSelectedChildren;
     using InlineBox::setHasSelectedChildren;
 
-    RenderObject::SelectionState selectionState() final;
+    RenderObject::HighlightState selectionState() final;
     InlineBox* firstSelectedBox();
     InlineBox* lastSelectedBox();
 
@@ -146,7 +146,7 @@ public:
         if (m_floats)
             m_floats->append(makeWeakPtr(floatingBox));
         else
-            m_floats = std::make_unique<CleanLineFloatList>(1, makeWeakPtr(floatingBox));
+            m_floats = makeUnique<CleanLineFloatList>(1, makeWeakPtr(floatingBox));
     }
 
     void removeFloat(RenderBox& floatingBox)
@@ -208,12 +208,9 @@ private:
     bool includeInitialLetterForBox(InlineBox&) const;
     bool includeMarginForBox(InlineBox&) const;
 
-    LayoutUnit lineSnapAdjustment(LayoutUnit delta = 0) const;
+    LayoutUnit lineSnapAdjustment(LayoutUnit delta = 0_lu) const;
 
     LayoutUnit beforeAnnotationsAdjustment() const;
-
-    // This folds into the padding at the end of InlineFlowBox on 64-bit.
-    unsigned m_lineBreakPos;
 
     // Where this line ended.  The exact object and the position within that object are stored so that
     // we can create an InlineIterator beginning just after the end of this line.
@@ -232,7 +229,8 @@ private:
     // Floats hanging off the line are pushed into this vector during layout. It is only
     // good for as long as the line has not been marked dirty.
     std::unique_ptr<CleanLineFloatList> m_floats;
-    WeakPtrFactory<RootInlineBox> m_weakPtrFactory;
+
+    unsigned m_lineBreakPos { 0 };
 };
 
 inline RootInlineBox* RootInlineBox::nextRootBox() const

@@ -27,21 +27,15 @@
 #include "JSSet.h"
 
 #include "JSCInlines.h"
-#include "SetPrototype.h"
 
 namespace JSC {
 
 const ClassInfo JSSet::s_info = { "Set", &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSSet) };
 
-String JSSet::toStringName(const JSObject*, ExecState*)
-{
-    return ASCIILiteral("Object");
-}
-
-JSSet* JSSet::clone(ExecState* exec, VM& vm, Structure* structure)
+JSSet* JSSet::clone(JSGlobalObject* globalObject, VM& vm, Structure* structure)
 {
     JSSet* instance = new (NotNull, allocateCell<JSSet>(vm.heap)) JSSet(vm, structure);
-    instance->finishCreation(exec, vm, this);
+    instance->finishCreation(globalObject, vm, this);
     return instance;
 }
 
@@ -51,12 +45,12 @@ bool JSSet::isIteratorProtocolFastAndNonObservable()
     if (!globalObject->isSetPrototypeIteratorProtocolFastAndNonObservable())
         return false;
 
-    Structure* structure = this->structure();
+    VM& vm = globalObject->vm();
+    Structure* structure = this->structure(vm);
     // This is the fast case. Many sets will be an original set.
     if (structure == globalObject->setStructure())
         return true;
 
-    VM& vm = globalObject->vm();
     if (getPrototypeDirect(vm) != globalObject->jsSetPrototype())
         return false;
 

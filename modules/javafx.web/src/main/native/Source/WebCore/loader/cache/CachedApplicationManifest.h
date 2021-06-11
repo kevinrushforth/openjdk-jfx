@@ -38,22 +38,22 @@ class TextResourceDecoder;
 
 class CachedApplicationManifest final : public CachedResource {
 public:
-    CachedApplicationManifest(CachedResourceRequest&&, PAL::SessionID);
+    CachedApplicationManifest(CachedResourceRequest&&, const PAL::SessionID&, const CookieJar*);
 
-    std::optional<struct ApplicationManifest> process(const URL& manifestURL, const URL& documentURL, RefPtr<ScriptExecutionContext> = nullptr);
+    Optional<struct ApplicationManifest> process(const URL& manifestURL, const URL& documentURL, RefPtr<ScriptExecutionContext> = nullptr);
 
 private:
-    void finishLoading(SharedBuffer*) override;
+    void finishLoading(SharedBuffer*, const NetworkLoadMetrics&) override;
     const TextResourceDecoder* textResourceDecoder() const override { return m_decoder.ptr(); }
     void setEncoding(const String&) override;
     String encoding() const override;
 
     Ref<TextResourceDecoder> m_decoder;
-    std::optional<String> m_text;
+    Optional<String> m_text;
 };
 
 } // namespace WebCore
 
-SPECIALIZE_TYPE_TRAITS_CACHED_RESOURCE(CachedApplicationManifest, CachedResource::ApplicationManifest)
+SPECIALIZE_TYPE_TRAITS_CACHED_RESOURCE(CachedApplicationManifest, CachedResource::Type::ApplicationManifest)
 
 #endif // ENABLE(APPLICATION_MANIFEST)

@@ -35,9 +35,10 @@ namespace WebCore {
 
 class DOMPromise;
 
-class ExtendableEvent : public Event {
+class ExtendableEvent : public Event, public CanMakeWeakPtr<ExtendableEvent> {
+    WTF_MAKE_ISO_ALLOCATED(ExtendableEvent);
 public:
-    static Ref<ExtendableEvent> create(const AtomicString& type, const ExtendableEventInit& initializer, IsTrusted isTrusted = IsTrusted::No)
+    static Ref<ExtendableEvent> create(const AtomString& type, const ExtendableEventInit& initializer, IsTrusted isTrusted = IsTrusted::No)
     {
         return adoptRef(*new ExtendableEvent(type, initializer, isTrusted));
     }
@@ -52,17 +53,14 @@ public:
     WEBCORE_EXPORT void whenAllExtendLifetimePromisesAreSettled(WTF::Function<void(HashSet<Ref<DOMPromise>>&&)>&&);
 
 protected:
-    WEBCORE_EXPORT ExtendableEvent(const AtomicString&, const ExtendableEventInit&, IsTrusted);
-    ExtendableEvent(const AtomicString&, bool bubbles, bool cancelable);
-
-    WeakPtr<ExtendableEvent> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(*this); }
+    WEBCORE_EXPORT ExtendableEvent(const AtomString&, const ExtendableEventInit&, IsTrusted);
+    ExtendableEvent(const AtomString&, CanBubble, IsCancelable);
 
     void addExtendLifetimePromise(Ref<DOMPromise>&&);
 
 private:
     unsigned m_pendingPromiseCount { 0 };
     HashSet<Ref<DOMPromise>> m_extendLifetimePromises;
-    WeakPtrFactory<ExtendableEvent> m_weakPtrFactory;
     WTF::Function<void(HashSet<Ref<DOMPromise>>&&)> m_whenAllExtendLifetimePromisesAreSettledHandler;
 };
 

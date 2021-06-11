@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,6 +34,7 @@ class NaturalLoops;
 
 template<typename Graph>
 class NaturalLoop {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     NaturalLoop()
         : m_graph(nullptr)
@@ -94,7 +95,11 @@ private:
     template<typename>
     friend class NaturalLoops;
 
-    void addBlock(typename Graph::Node block) { m_body.append(block); }
+    void addBlock(typename Graph::Node block)
+    {
+        ASSERT(!m_body.contains(block)); // The NaturalLoops algorithm relies on blocks being unique in this vector.
+        m_body.append(block);
+    }
 
     Graph* m_graph;
     typename Graph::Node m_header;
@@ -105,6 +110,7 @@ private:
 
 template<typename Graph>
 class NaturalLoops {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     typedef std::array<unsigned, 2> InnerMostLoopIndices;
 
@@ -120,7 +126,7 @@ public:
         // blocks to their loop headers, which gives us all of the blocks in the
         // loop body.
 
-        static const bool verbose = false;
+        static constexpr bool verbose = false;
 
         if (verbose) {
             dataLog("Dominators:\n");
@@ -130,26 +136,28 @@ public:
         m_loops.shrink(0);
 
         for (unsigned blockIndex = graph.numNodes(); blockIndex--;) {
-            typename Graph::Node block = graph.node(blockIndex);
-            if (!block)
+            typename Graph::Node header = graph.node(blockIndex);
+            if (!header)
                 continue;
 
-            for (unsigned i = graph.successors(block).size(); i--;) {
-                typename Graph::Node successor = graph.successors(block)[i];
-                if (!dominators.dominates(successor, block))
+            for (unsigned i = graph.predecessors(header).size(); i--;) {
+                typename Graph::Node footer = graph.predecessors(header)[i];
+                if (!dominators.dominates(header, footer))
                     continue;
+                // At this point, we've proven 'header' is actually a loop header and
+                // that 'footer' is a loop footer.
                 bool found = false;
                 for (unsigned j = m_loops.size(); j--;) {
-                    if (m_loops[j].header() == successor) {
-                        m_loops[j].addBlock(block);
+                    if (m_loops[j].header() == header) {
+                        m_loops[j].addBlock(footer);
                         found = true;
                         break;
                     }
                 }
                 if (found)
                     continue;
-                NaturalLoop<Graph> loop(graph, successor, m_loops.size());
-                loop.addBlock(block);
+                NaturalLoop<Graph> loop(graph, header, m_loops.size());
+                loop.addBlock(footer);
                 m_loops.append(loop);
             }
         }
@@ -279,7 +287,7 @@ public:
             return nullptr;
         if (loop->header() == block)
             return loop;
-        if (!ASSERT_DISABLED) {
+        if (ASSERT_ENABLED) {
             for (; loop; loop = innerMostOuterLoop(*loop))
                 ASSERT(loop->header() != block);
         }

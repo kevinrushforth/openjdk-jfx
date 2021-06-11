@@ -32,6 +32,7 @@
 #include "DynamicsCompressorKernel.h"
 #include "ZeroPole.h"
 #include <memory>
+#include <wtf/UniqueArray.h>
 
 namespace WebCore {
 
@@ -42,7 +43,9 @@ class AudioBus;
 // of the loudest parts of the signal and raises the volume of the softest parts,
 // making the sound richer, fuller, and more controlled.
 
-class DynamicsCompressor {
+class DynamicsCompressor final {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(DynamicsCompressor);
 public:
     enum {
         ParamThreshold,
@@ -93,16 +96,17 @@ protected:
     float m_lastAnchor;
     float m_lastFilterStageGain;
 
-    typedef struct {
+    struct ZeroPoleFilterPack4 {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         ZeroPole filters[4];
-    } ZeroPoleFilterPack4;
+    };
 
     // Per-channel emphasis filters.
     Vector<std::unique_ptr<ZeroPoleFilterPack4>> m_preFilterPacks;
     Vector<std::unique_ptr<ZeroPoleFilterPack4>> m_postFilterPacks;
 
-    std::unique_ptr<const float*[]> m_sourceChannels;
-    std::unique_ptr<float*[]> m_destinationChannels;
+    UniqueArray<const float*> m_sourceChannels;
+    UniqueArray<float*> m_destinationChannels;
 
     void setEmphasisStageParameters(unsigned stageIndex, float gain, float normalizedFrequency /* 0 -> 1 */);
     void setEmphasisParameters(float gain, float anchorFreq, float filterStageRatio);

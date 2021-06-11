@@ -37,12 +37,14 @@ namespace WebCore {
 using namespace Inspector;
 
 ServiceWorkerAgent::ServiceWorkerAgent(WorkerAgentContext& context)
-    : InspectorAgentBase(ASCIILiteral("ServiceWorker"), context)
+    : InspectorAgentBase("ServiceWorker"_s, context)
     , m_serviceWorkerGlobalScope(downcast<ServiceWorkerGlobalScope>(context.workerGlobalScope))
     , m_backendDispatcher(Inspector::ServiceWorkerBackendDispatcher::create(context.backendDispatcher, this))
 {
     ASSERT(context.workerGlobalScope.isContextThread());
 }
+
+ServiceWorkerAgent::~ServiceWorkerAgent() = default;
 
 void ServiceWorkerAgent::didCreateFrontendAndBackend(Inspector::FrontendRouter*, Inspector::BackendDispatcher*)
 {
@@ -57,7 +59,7 @@ void ServiceWorkerAgent::getInitializationInfo(ErrorString&, RefPtr<Inspector::P
     info = Inspector::Protocol::ServiceWorker::Configuration::create()
         .setTargetId(m_serviceWorkerGlobalScope.identifier())
         .setSecurityOrigin(m_serviceWorkerGlobalScope.securityOrigin()->toRawString())
-        .setUrl(m_serviceWorkerGlobalScope.thread().contextData().scriptURL)
+        .setUrl(m_serviceWorkerGlobalScope.thread().contextData().scriptURL.string())
         .setContent(m_serviceWorkerGlobalScope.thread().contextData().script)
         .release();
 }

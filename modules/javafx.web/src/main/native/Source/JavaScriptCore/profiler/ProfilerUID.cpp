@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2016-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,14 +26,15 @@
 #include "config.h"
 #include "ProfilerUID.h"
 
-#include "JSCInlines.h"
+#include "JSCJSValueInlines.h"
+#include "JSGlobalObject.h"
 #include <wtf/Lock.h>
 
 namespace JSC { namespace Profiler {
 
 UID UID::create()
 {
-    static StaticLock lock;
+    static Lock lock;
     static uint64_t counter;
 
     LockHolder locker(lock);
@@ -47,9 +48,9 @@ void UID::dump(PrintStream& out) const
     out.print(m_uid);
 }
 
-JSValue UID::toJS(ExecState* exec) const
+JSValue UID::toJS(JSGlobalObject* globalObject) const
 {
-    return jsString(exec, toString(*this));
+    return jsString(globalObject->vm(), toString(*this));
 }
 
 } } // namespace JSC::Profiler

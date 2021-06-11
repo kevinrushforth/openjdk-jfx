@@ -26,6 +26,7 @@
 #include "config.h"
 #include "SimpleLineLayout.h"
 
+#include "DocumentMarkerController.h"
 #include "FontCache.h"
 #include "Frame.h"
 #include "GraphicsContext.h"
@@ -50,6 +51,7 @@
 #include "Settings.h"
 #include "SimpleLineLayoutFlowContents.h"
 #include "SimpleLineLayoutFunctions.h"
+#include "SimpleLineLayoutResolver.h"
 #include "SimpleLineLayoutTextFragmentIterator.h"
 #include "Text.h"
 #include "TextPaintStyle.h"
@@ -105,7 +107,7 @@ template<> AvoidanceReasonFlags canUseForCharacter(LChar, bool, IncludeReasons)
 }
 
 template <typename CharacterType>
-static AvoidanceReasonFlags canUseForText(const CharacterType* text, unsigned length, const FontCascade& fontCascade, std::optional<float> lineHeightConstraint,
+static AvoidanceReasonFlags canUseForText(const CharacterType* text, unsigned length, const FontCascade& fontCascade, Optional<float> lineHeightConstraint,
     bool textIsJustified, IncludeReasons includeReasons)
 {
     AvoidanceReasonFlags reasons = { };
@@ -144,7 +146,7 @@ static AvoidanceReasonFlags canUseForText(const CharacterType* text, unsigned le
     return reasons;
 }
 
-static AvoidanceReasonFlags canUseForText(StringView text, const FontCascade& fontCascade, std::optional<float> lineHeightConstraint, bool textIsJustified, IncludeReasons includeReasons)
+static AvoidanceReasonFlags canUseForText(StringView text, const FontCascade& fontCascade, Optional<float> lineHeightConstraint, bool textIsJustified, IncludeReasons includeReasons)
 {
     if (text.is8Bit())
         return canUseForText(text.characters8(), text.length(), fontCascade, lineHeightConstraint, textIsJustified, includeReasons);
@@ -159,10 +161,10 @@ static AvoidanceReasonFlags canUseForFontAndText(const RenderBlockFlow& flow, In
     auto& fontCascade = style.fontCascade();
     if (fontCascade.primaryFont().isInterstitial())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsMissingPrimaryFont, reasons, includeReasons);
-    std::optional<float> lineHeightConstraint;
-    if (style.lineBoxContain() & LineBoxContainGlyphs)
+    Optional<float> lineHeightConstraint;
+    if (style.lineBoxContain().contains(LineBoxContain::Glyphs))
         lineHeightConstraint = lineHeightFromFlow(flow).toFloat();
-    bool flowIsJustified = style.textAlign() == JUSTIFY;
+    bool flowIsJustified = style.textAlign() == TextAlignMode::Justify;
     for (const auto& textRenderer : childrenOfType<RenderText>(flow)) {
         // FIXME: Do not return until after checking all children.
         if (textRenderer.text().isEmpty())
@@ -181,7 +183,7 @@ static AvoidanceReasonFlags canUseForFontAndText(const RenderBlockFlow& flow, In
             // No need to check the code path at this point. We already know it can't be simple.
             SET_REASON_AND_RETURN_IF_NEEDED(FlowHasComplexFontCodePath, reasons, includeReasons);
         } else {
-            TextRun run(textRenderer.text());
+            TextRun run(String(textRenderer.text()));
             run.setCharacterScanForCodePath(false);
             if (style.fontCascade().codePath(run) != FontCascade::Simple)
                 SET_REASON_AND_RETURN_IF_NEEDED(FlowHasComplexFontCodePath, reasons, includeReasons);
@@ -197,53 +199,53 @@ static AvoidanceReasonFlags canUseForFontAndText(const RenderBlockFlow& flow, In
 static AvoidanceReasonFlags canUseForStyle(const RenderStyle& style, IncludeReasons includeReasons)
 {
     AvoidanceReasonFlags reasons = { };
-    if (style.textOverflow())
+    if (style.textOverflow() == TextOverflow::Ellipsis)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextOverflow, reasons, includeReasons);
-    if ((style.textDecorationsInEffect() & TextDecorationUnderline) && style.textUnderlinePosition() == TextUnderlinePositionUnder)
+    if (style.textUnderlinePosition() != TextUnderlinePosition::Auto || !style.textUnderlineOffset().isAuto() || !style.textDecorationThickness().isAuto())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasUnsupportedUnderlineDecoration, reasons, includeReasons);
     // Non-visible overflow should be pretty easy to support.
-    if (style.overflowX() != OVISIBLE || style.overflowY() != OVISIBLE)
+    if (style.overflowX() != Overflow::Visible || style.overflowY() != Overflow::Visible)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasOverflowNotVisible, reasons, includeReasons);
     if (!style.isLeftToRightDirection())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsNotLTR, reasons, includeReasons);
-    if (!(style.lineBoxContain() & LineBoxContainBlock))
+    if (!(style.lineBoxContain().contains(LineBoxContain::Block)))
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasLineBoxContainProperty, reasons, includeReasons);
     if (style.writingMode() != TopToBottomWritingMode)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsNotTopToBottom, reasons, includeReasons);
-    if (style.lineBreak() != LineBreakAuto)
+    if (style.lineBreak() != LineBreak::Auto)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasLineBreak, reasons, includeReasons);
     if (style.unicodeBidi() != UBNormal)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasNonNormalUnicodeBiDi, reasons, includeReasons);
-    if (style.rtlOrdering() != LogicalOrder)
+    if (style.rtlOrdering() != Order::Logical)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasRTLOrdering, reasons, includeReasons);
-    if (style.lineAlign() != LineAlignNone)
+    if (style.lineAlign() != LineAlign::None)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasLineAlignEdges, reasons, includeReasons);
-    if (style.lineSnap() != LineSnapNone)
+    if (style.lineSnap() != LineSnap::None)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasLineSnap, reasons, includeReasons);
-    if (style.textEmphasisFill() != TextEmphasisFillFilled || style.textEmphasisMark() != TextEmphasisMarkNone)
+    if (style.textEmphasisFill() != TextEmphasisFill::Filled || style.textEmphasisMark() != TextEmphasisMark::None)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextEmphasisFillOrMark, reasons, includeReasons);
     if (style.textShadow())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextShadow, reasons, includeReasons);
-    if (style.hasPseudoStyle(FIRST_LINE))
+    if (style.hasPseudoStyle(PseudoId::FirstLine))
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasPseudoFirstLine, reasons, includeReasons);
-    if (style.hasPseudoStyle(FIRST_LETTER))
+    if (style.hasPseudoStyle(PseudoId::FirstLetter))
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasPseudoFirstLetter, reasons, includeReasons);
     if (style.hasTextCombine())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextCombine, reasons, includeReasons);
-    if (style.backgroundClip() == TextFillBox)
+    if (style.backgroundClip() == FillBox::Text)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextFillBox, reasons, includeReasons);
-    if (style.borderFit() == BorderFitLines)
+    if (style.borderFit() == BorderFit::Lines)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasBorderFitLines, reasons, includeReasons);
-    if (style.lineBreak() != LineBreakAuto)
+    if (style.lineBreak() != LineBreak::Auto)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasNonAutoLineBreak, reasons, includeReasons);
-    if (style.nbspMode() != NBNORMAL)
+    if (style.nbspMode() != NBSPMode::Normal)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasWebKitNBSPMode, reasons, includeReasons);
-#if ENABLE(CSS_TRAILING_WORD)
-    if (style.trailingWord() != TrailingWord::Auto)
-        SET_REASON_AND_RETURN_IF_NEEDED(FlowHasNonAutoTrailingWord, reasons, includeReasons);
-#endif
-    if (style.hyphens() == HyphensAuto) {
-        auto textReasons = canUseForText(style.hyphenString(), style.fontCascade(), std::nullopt, false, includeReasons);
+    // Special handling of text-security:disc is not yet implemented in the simple line layout code path.
+    // See RenderBlock::updateSecurityDiscCharacters.
+    if (style.textSecurity() != TextSecurity::None)
+        SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextSecurity, reasons, includeReasons);
+    if (style.hyphens() == Hyphens::Auto) {
+        auto textReasons = canUseForText(style.hyphenString(), style.fontCascade(), WTF::nullopt, false, includeReasons);
         if (textReasons != NoReason)
             SET_REASON_AND_RETURN_IF_NEEDED(textReasons, reasons, includeReasons);
     }
@@ -277,7 +279,7 @@ AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow& flow, IncludeRea
         if (columnThread.hasColumnSpanner())
             SET_REASON_AND_RETURN_IF_NEEDED(MultiColumnFlowHasColumnSpanner, reasons, includeReasons);
         auto& style = flow.style();
-        if (style.verticalAlign() != BASELINE)
+        if (style.verticalAlign() != VerticalAlign::Baseline)
             SET_REASON_AND_RETURN_IF_NEEDED(MultiColumnFlowVerticalAlign, reasons, includeReasons);
         if (style.isFloating())
             SET_REASON_AND_RETURN_IF_NEEDED(MultiColumnFlowIsFloating, reasons, includeReasons);
@@ -288,7 +290,7 @@ AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow& flow, IncludeRea
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasOutline, reasons, includeReasons);
     if (flow.isRubyText() || flow.isRubyBase())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsRuby, reasons, includeReasons);
-    if (flow.style().hangingPunctuation() != NoHangingPunctuation)
+    if (!flow.style().hangingPunctuation().isEmpty())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasHangingPunctuation, reasons, includeReasons);
 
     // Printing does pagination without a flow thread.
@@ -296,7 +298,7 @@ AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow& flow, IncludeRea
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsPaginated, reasons, includeReasons);
     if (flow.firstLineBlock())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasPseudoFirstLine, reasons, includeReasons);
-    if (flow.isAnonymousBlock() && flow.parent()->style().textOverflow())
+    if (flow.isAnonymousBlock() && flow.parent()->style().textOverflow() == TextOverflow::Ellipsis)
         SET_REASON_AND_RETURN_IF_NEEDED(FlowHasTextOverflow, reasons, includeReasons);
     if (flow.parent()->isDeprecatedFlexibleBox())
         SET_REASON_AND_RETURN_IF_NEEDED(FlowIsDepricatedFlexBox, reasons, includeReasons);
@@ -309,13 +311,16 @@ AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow& flow, IncludeRea
     // This currently covers <blockflow>#text</blockflow>, <blockflow>#text<br></blockflow> and mutiple (sibling) RenderText cases.
     // The <blockflow><inline>#text</inline></blockflow> case is also popular and should be relatively easy to cover.
     for (const auto* child = flow.firstChild(); child;) {
-        if (child->selectionState() != RenderObject::SelectionNone)
+        if (child->selectionState() != RenderObject::HighlightState::None)
             SET_REASON_AND_RETURN_IF_NEEDED(FlowChildIsSelected, reasons, includeReasons);
         if (is<RenderText>(*child)) {
+            const auto& renderText = downcast<RenderText>(*child);
+            if (renderText.textNode() && !renderText.document().markers().markersFor(*renderText.textNode()).isEmpty())
+                SET_REASON_AND_RETURN_IF_NEEDED(FlowIncludesDocumentMarkers, reasons, includeReasons);
             child = child->nextSibling();
             continue;
         }
-        if (is<RenderLineBreak>(child) && !downcast<RenderLineBreak>(*child).isWBR() && child->style().clear() == CNONE) {
+        if (is<RenderLineBreak>(child) && !downcast<RenderLineBreak>(*child).isWBR() && child->style().clear() == Clear::None) {
             child = child->nextSibling();
             continue;
         }
@@ -352,30 +357,6 @@ AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow& flow, IncludeRea
 bool canUseFor(const RenderBlockFlow& flow)
 {
     return canUseForWithReason(flow, IncludeReasons::First) == NoReason;
-}
-
-static float computeLineLeft(ETextAlign textAlign, float availableWidth, float committedWidth, float logicalLeftOffset)
-{
-    float remainingWidth = availableWidth - committedWidth;
-    float left = logicalLeftOffset;
-    switch (textAlign) {
-    case LEFT:
-    case WEBKIT_LEFT:
-    case TASTART:
-        return left;
-    case RIGHT:
-    case WEBKIT_RIGHT:
-    case TAEND:
-        return left + std::max<float>(remainingWidth, 0);
-    case CENTER:
-    case WEBKIT_CENTER:
-        return left + std::max<float>(remainingWidth / 2, 0);
-    case JUSTIFY:
-        ASSERT_NOT_REACHED();
-        break;
-    }
-    ASSERT_NOT_REACHED();
-    return 0;
 }
 
 static void revertAllRunsOnCurrentLine(Layout::RunVector& runs)
@@ -421,7 +402,8 @@ public:
     float availableWidth() const { return m_availableWidth; }
     float logicalLeftOffset() const { return m_logicalLeftOffset; }
     const TextFragmentIterator::TextFragment& overflowedFragment() const { return m_overflowedFragment; }
-    bool hasTrailingWhitespace() const { return m_lastFragment.type() == TextFragmentIterator::TextFragment::Whitespace; }
+    bool hasTrailingWhitespace() const { return m_lastFragment.type() == TextFragmentIterator::TextFragment::Whitespace && m_lastFragment.length() > 0; }
+    bool hasWhitespaceFragments() const { return m_lastWhitespaceFragment != WTF::nullopt; }
     TextFragmentIterator::TextFragment lastFragment() const { return m_lastFragment; }
     bool isWhitespaceOnly() const { return m_trailingWhitespaceWidth && m_runsWidth == m_trailingWhitespaceWidth; }
     bool fits(float extra) const { return m_availableWidth >= m_runsWidth + extra; }
@@ -471,7 +453,7 @@ public:
         // New line needs new run.
         if (!m_runsWidth) {
             ASSERT(!m_uncompletedWidth);
-            runs.append(Run(fragment.start(), endPosition, m_runsWidth, m_runsWidth + fragment.width(), false, fragment.hasHyphen()));
+            runs.append(Run(fragment.start(), endPosition, m_runsWidth, m_runsWidth + fragment.width(), false, fragment.hasHyphen(), fragment.isLineBreak()));
         } else {
             // Advance last completed fragment when the previous fragment is all set (including multiple parts across renderers)
             if ((m_lastFragment.type() != fragment.type()) || !m_lastFragment.overlapsToNextRenderer()) {
@@ -489,10 +471,10 @@ public:
                 // This fragment is collapsed completely. No run is needed.
                 return;
             }
-            if (m_lastFragment.isLastInRenderer() || m_lastFragment.isCollapsed())
-                runs.append(Run(fragment.start(), endPosition, m_runsWidth, m_runsWidth + fragment.width(), false, fragment.hasHyphen()));
+            Run& lastRun = runs.last();
+            if (m_lastFragment.isLastInRenderer() || m_lastFragment.isCollapsed() || fragment.isLineBreak() || lastRun.isLineBreak)
+                runs.append(Run(fragment.start(), endPosition, m_runsWidth, m_runsWidth + fragment.width(), false, fragment.hasHyphen(), fragment.isLineBreak()));
             else {
-                Run& lastRun = runs.last();
                 lastRun.end = endPosition;
                 lastRun.logicalRight += fragment.width();
                 ASSERT(!lastRun.hasHyphen);
@@ -504,9 +486,10 @@ public:
         if (m_fragments)
             (*m_fragments).append(fragment);
 
-        if (fragment.type() == TextFragmentIterator::TextFragment::Whitespace)
+        if (fragment.type() == TextFragmentIterator::TextFragment::Whitespace) {
             m_trailingWhitespaceWidth += fragment.width();
-        else {
+            m_lastWhitespaceFragment = fragment;
+        } else {
             m_trailingWhitespaceWidth = 0;
             m_lastNonWhitespaceFragment = fragment;
         }
@@ -531,7 +514,7 @@ public:
 
     void removeTrailingWhitespace(Layout::RunVector& runs)
     {
-        if (m_lastFragment.type() != TextFragmentIterator::TextFragment::Whitespace)
+        if (!hasTrailingWhitespace())
             return;
         if (m_lastNonWhitespaceFragment) {
             auto needsReverting = m_lastNonWhitespaceFragment->end() != m_lastFragment.end();
@@ -553,6 +536,8 @@ public:
         m_lastFragment = TextFragmentIterator::TextFragment();
     }
 
+    float trailingWhitespaceWidth() const { return m_trailingWhitespaceWidth; }
+
 private:
     bool expansionOpportunity(TextFragmentIterator::TextFragment::Type currentFragmentType, TextFragmentIterator::TextFragment::Type previousFragmentType) const
     {
@@ -565,7 +550,8 @@ private:
     float m_runsWidth { 0 };
     TextFragmentIterator::TextFragment m_overflowedFragment;
     TextFragmentIterator::TextFragment m_lastFragment;
-    std::optional<TextFragmentIterator::TextFragment> m_lastNonWhitespaceFragment;
+    Optional<TextFragmentIterator::TextFragment> m_lastNonWhitespaceFragment;
+    Optional<TextFragmentIterator::TextFragment> m_lastWhitespaceFragment;
     TextFragmentIterator::TextFragment m_lastCompleteFragment;
     float m_uncompletedWidth { 0 };
     float m_trailingWhitespaceWidth { 0 }; // Use this to remove trailing whitespace without re-mesuring the text.
@@ -574,27 +560,40 @@ private:
     // First character of the first fragment might be forced on to the current line even if it does not fit.
     bool m_firstCharacterFits { false };
     bool m_hyphenationDisabled { false };
-    std::optional<Vector<TextFragmentIterator::TextFragment, 30>> m_fragments;
+    Optional<Vector<TextFragmentIterator::TextFragment, 30>> m_fragments;
 };
+
+static float computeLineLeft(const LineState& line, TextAlignMode textAlign, float& hangingWhitespaceWidth)
+{
+    float totalWidth = line.width() - hangingWhitespaceWidth;
+    float remainingWidth = line.availableWidth() - totalWidth;
+    float left = line.logicalLeftOffset();
+    switch (textAlign) {
+    case TextAlignMode::Left:
+    case TextAlignMode::WebKitLeft:
+    case TextAlignMode::Start:
+        hangingWhitespaceWidth = std::max(0.f, std::min(hangingWhitespaceWidth, remainingWidth));
+        return left;
+    case TextAlignMode::Right:
+    case TextAlignMode::WebKitRight:
+    case TextAlignMode::End:
+        hangingWhitespaceWidth = 0;
+        return left + std::max<float>(remainingWidth, 0);
+    case TextAlignMode::Center:
+    case TextAlignMode::WebKitCenter:
+        hangingWhitespaceWidth = std::max(0.f, std::min(hangingWhitespaceWidth, (remainingWidth + 1) / 2));
+        return left + std::max<float>(remainingWidth / 2, 0);
+    case TextAlignMode::Justify:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+    ASSERT_NOT_REACHED();
+    return 0;
+}
 
 static bool preWrap(const TextFragmentIterator::Style& style)
 {
-    return style.wrapLines && !style.collapseWhitespace;
-}
-
-static void removeTrailingWhitespace(LineState& lineState, Layout::RunVector& runs, const TextFragmentIterator& textFragmentIterator)
-{
-    if (!lineState.hasTrailingWhitespace())
-        return;
-    // Remove collapsed whitespace, or non-collapsed pre-wrap whitespace, unless it's the only content on the line -so removing the whitesapce
-    // would produce an empty line.
-    const auto& style = textFragmentIterator.style();
-    bool collapseWhitespace = style.collapseWhitespace | preWrap(style);
-    if (!collapseWhitespace)
-        return;
-    if (preWrap(style) && lineState.isWhitespaceOnly())
-        return;
-    lineState.removeTrailingWhitespace(runs);
+    return style.wrapLines && !style.collapseWhitespace && !style.breakSpaces;
 }
 
 static void updateLineConstrains(const RenderBlockFlow& flow, LineState& line, const LineState& previousLine, unsigned& numberOfPrecedingLinesWithHyphen, const TextFragmentIterator::Style& style, bool isFirstLine)
@@ -602,10 +601,10 @@ static void updateLineConstrains(const RenderBlockFlow& flow, LineState& line, c
     bool shouldApplyTextIndent = !flow.isAnonymous() || flow.parent()->firstChild() == &flow;
     LayoutUnit height = flow.logicalHeight();
     LayoutUnit logicalHeight = flow.minLineHeightForReplacedRenderer(false, 0);
-    line.setLogicalLeftOffset(flow.logicalLeftOffsetForLine(height, DoNotIndentText, logicalHeight) + (shouldApplyTextIndent && isFirstLine ? flow.textIndentOffset() : LayoutUnit(0)));
+    line.setLogicalLeftOffset(flow.logicalLeftOffsetForLine(height, DoNotIndentText, logicalHeight) + (shouldApplyTextIndent && isFirstLine ? flow.textIndentOffset() : 0_lu));
     float logicalRightOffset = flow.logicalRightOffsetForLine(height, DoNotIndentText, logicalHeight);
     line.setAvailableWidth(std::max<float>(0, logicalRightOffset - line.logicalLeftOffset()));
-    if (style.textAlign == JUSTIFY)
+    if (style.textAlign == TextAlignMode::Justify)
         line.setNeedsAllFragments();
     numberOfPrecedingLinesWithHyphen = (previousLine.isEmpty() || !previousLine.lastFragment().hasHyphen()) ? 0 : numberOfPrecedingLinesWithHyphen + 1;
     if (style.hyphenLimitLines && numberOfPrecedingLinesWithHyphen >= *style.hyphenLimitLines)
@@ -617,12 +616,12 @@ struct SplitFragmentData {
     unsigned position;
     float width;
 };
-static std::optional<unsigned> hyphenPositionForFragment(SplitFragmentData splitData, const TextFragmentIterator::TextFragment& fragmentToSplit,
+static Optional<unsigned> hyphenPositionForFragment(SplitFragmentData splitData, const TextFragmentIterator::TextFragment& fragmentToSplit,
     const LineState& line, const TextFragmentIterator& textFragmentIterator, float availableWidth)
 {
     auto& style = textFragmentIterator.style();
     if (!style.shouldHyphenate || line.isHyphenationDisabled())
-        return std::nullopt;
+        return WTF::nullopt;
 
     // FIXME: This is a workaround for webkit.org/b/169613. See maxPrefixWidth computation in tryHyphenating().
     // It does not work properly with non-collapsed leading tabs when font is enlarged.
@@ -630,7 +629,7 @@ static std::optional<unsigned> hyphenPositionForFragment(SplitFragmentData split
     if (!line.isEmpty())
         adjustedAvailableWidth += style.font.spaceWidth();
     if (!enoughWidthForHyphenation(adjustedAvailableWidth, style.font.pixelSize()))
-        return std::nullopt;
+        return WTF::nullopt;
 
     // We might be able to fit the hyphen at the split position.
     auto splitPositionWithHyphen = splitData.position;
@@ -639,7 +638,7 @@ static std::optional<unsigned> hyphenPositionForFragment(SplitFragmentData split
     auto leftSideWidth = splitData.width;
     while (leftSideWidth + style.hyphenStringWidth > availableWidth) {
         if (--splitPositionWithHyphen <= start)
-            return std::nullopt; // No space for hyphen.
+            return WTF::nullopt; // No space for hyphen.
         leftSideWidth -= textFragmentIterator.textWidth(splitPositionWithHyphen, splitPositionWithHyphen + 1, 0);
     }
     ASSERT(splitPositionWithHyphen > start);
@@ -679,7 +678,7 @@ static TextFragmentIterator::TextFragment splitFragmentToFitLine(TextFragmentIte
 {
     auto availableWidth = line.availableWidth() - line.width();
     auto splitFragmentData = split(fragmentToSplit, availableWidth, textFragmentIterator);
-    std::optional<unsigned> hyphenPosition = std::nullopt;
+    Optional<unsigned> hyphenPosition = WTF::nullopt;
     // Does first character fit this line?
     if (splitFragmentData.position == fragmentToSplit.start()) {
         // Keep at least one character on empty lines.
@@ -746,13 +745,18 @@ static TextFragmentIterator::TextFragment firstFragment(TextFragmentIterator& te
 
     // Leading whitespace handling.
     auto& style = textFragmentIterator.style();
+    if (style.breakSpaces) {
+        // Leading whitespace created after breaking the previous line.
+        // Breaking before the first space after a word is only allowed in combination with break-all or break-word.
+        if (style.breakFirstWordOnOverflow || previousLine.hasTrailingWhitespace())
+            return overflowedFragment;
+    }
     // Special overflow pre-wrap whitespace handling: skip the overflowed whitespace (even when style says not-collapsible)
     // if we manage to fit at least one character on the previous line.
-    auto preWrapIsOn = preWrap(style);
-    if ((style.collapseWhitespace || preWrapIsOn) && previousLine.firstCharacterFits()) {
+    if ((style.collapseWhitespace || style.wrapLines) && previousLine.firstCharacterFits()) {
         // If skipping the whitespace puts us on a newline, skip the newline too as we already wrapped the line.
         auto firstFragmentCandidate = consumeLineBreakIfNeeded(textFragmentIterator.nextTextFragment(), textFragmentIterator, currentLine, runs,
-            preWrapIsOn ? PreWrapLineBreakRule::Ignore : PreWrapLineBreakRule::Preserve);
+            preWrap(style) ? PreWrapLineBreakRule::Ignore : PreWrapLineBreakRule::Preserve);
         return skipWhitespaceIfNeeded(firstFragmentCandidate, textFragmentIterator);
     }
     return skipWhitespaceIfNeeded(overflowedFragment, textFragmentIterator);
@@ -789,8 +793,8 @@ static bool createLineRuns(LineState& line, const LineState& previousLine, Layou
         // Hard and soft linebreaks.
         if (fragment.isLineBreak()) {
             // Add the new line fragment only if there's nothing on the line. (otherwise the extra new line character would show up at the end of the content.)
-            if (line.isEmpty() || fragment.type() == TextFragmentIterator::TextFragment::HardLineBreak) {
-                if (style.textAlign == RIGHT || style.textAlign == WEBKIT_RIGHT)
+            if (line.isEmpty() || fragment.type() == TextFragmentIterator::TextFragment::HardLineBreak || preWrap(style) || style.preserveNewline) {
+                if (style.textAlign == TextAlignMode::Right || style.textAlign == TextAlignMode::WebKitRight)
                     line.removeTrailingWhitespace(runs);
                 line.appendFragmentAndCreateRunIfNeeded(fragment, runs);
             }
@@ -808,6 +812,19 @@ static bool createLineRuns(LineState& line, const LineState& previousLine, Layou
             if (fragment.type() == TextFragmentIterator::TextFragment::Whitespace) {
                 if (style.collapseWhitespace) {
                     // Push collapased whitespace to the next line.
+                    line.setOverflowedFragment(fragment);
+                    break;
+                }
+                if (style.breakSpaces && line.hasWhitespaceFragments() && fragment.length() == 1) {
+                    // Breaking before the first space after a word is not allowed if there are previous breaking opportunities in the line.
+                    textFragmentIterator.revertToEndOfFragment(line.revertToLastCompleteFragment(runs));
+                    break;
+                }
+                if (preWrap(style)) {
+                    line.appendFragmentAndCreateRunIfNeeded(fragment, runs);
+                    fragment = textFragmentIterator.nextTextFragment(line.width());
+                    if (fragment.isLineBreak())
+                        continue;
                     line.setOverflowedFragment(fragment);
                     break;
                 }
@@ -861,8 +878,8 @@ static bool createLineRuns(LineState& line, const LineState& previousLine, Layou
 static ExpansionBehavior expansionBehavior(bool isAfterExpansion, bool lastRunOnLine)
 {
     ExpansionBehavior expansionBehavior;
-    expansionBehavior = isAfterExpansion ? ForbidLeadingExpansion : AllowLeadingExpansion;
-    expansionBehavior |= lastRunOnLine ? ForbidTrailingExpansion : AllowTrailingExpansion;
+    expansionBehavior = isAfterExpansion ? ForbidLeftExpansion : AllowLeftExpansion;
+    expansionBehavior |= lastRunOnLine ? ForbidRightExpansion : AllowRightExpansion;
     return expansionBehavior;
 }
 
@@ -902,36 +919,52 @@ static void justifyRuns(const LineState& line, Layout::RunVector& runs, unsigned
     }
 }
 
-static ETextAlign textAlignForLine(const TextFragmentIterator::Style& style, bool lastLine)
+static TextAlignMode textAlignForLine(const TextFragmentIterator::Style& style, bool lastLine)
 {
-    // Fallback to LEFT (START) alignment for non-collapsable content and for the last line before a forced break or the end of the block.
+    // Fallback to TextAlignMode::Left (START) alignment for non-collapsable content and for the last line before a forced break or the end of the block.
     auto textAlign = style.textAlign;
-    if (textAlign == JUSTIFY && (!style.collapseWhitespace || lastLine))
-        textAlign = LEFT;
+    if (textAlign == TextAlignMode::Justify && (!style.collapseWhitespace || lastLine))
+        textAlign = TextAlignMode::Left;
     return textAlign;
 }
 
-static void closeLineEndingAndAdjustRuns(LineState& line, Layout::RunVector& runs, std::optional<unsigned> lastRunIndexOfPreviousLine, unsigned& lineCount,
+static void closeLineEndingAndAdjustRuns(LineState& line, Layout::RunVector& runs, Optional<unsigned> lastRunIndexOfPreviousLine, unsigned& lineCount,
     const TextFragmentIterator& textFragmentIterator, bool lastLineInFlow)
 {
     if (!runs.size() || (lastRunIndexOfPreviousLine && runs.size() - 1 == lastRunIndexOfPreviousLine.value()))
         return;
-    removeTrailingWhitespace(line, runs, textFragmentIterator);
+
+    const auto& style = textFragmentIterator.style();
+
+    if (style.collapseWhitespace)
+        line.removeTrailingWhitespace(runs);
+
     if (!runs.size())
         return;
+
     // Adjust runs' position by taking line's alignment into account.
-    const auto& style = textFragmentIterator.style();
     auto firstRunIndex = lastRunIndexOfPreviousLine ? lastRunIndexOfPreviousLine.value() + 1 : 0;
     auto lineLogicalLeft = line.logicalLeftOffset();
     auto textAlign = textAlignForLine(style, lastLineInFlow || (line.lastFragment().isValid() && line.lastFragment().type() == TextFragmentIterator::TextFragment::HardLineBreak));
-    if (textAlign == JUSTIFY)
+
+    // https://www.w3.org/TR/css-text-3/#white-space-phase-2
+    bool shouldHangTrailingWhitespace = style.wrapLines && line.trailingWhitespaceWidth();
+    auto hangingWhitespaceWidth = shouldHangTrailingWhitespace ? line.trailingWhitespaceWidth() : 0;
+
+    if (textAlign == TextAlignMode::Justify) {
         justifyRuns(line, runs, firstRunIndex);
-    else
-        lineLogicalLeft = computeLineLeft(textAlign, line.availableWidth(), line.width(), line.logicalLeftOffset());
+        hangingWhitespaceWidth = 0;
+    } else
+        lineLogicalLeft = computeLineLeft(line, textAlign, hangingWhitespaceWidth);
+
     for (auto i = firstRunIndex; i < runs.size(); ++i) {
         runs[i].logicalLeft += lineLogicalLeft;
         runs[i].logicalRight += lineLogicalLeft;
     }
+
+    if (shouldHangTrailingWhitespace && hangingWhitespaceWidth < line.trailingWhitespaceWidth())
+        runs.last().logicalRight = runs.last().logicalRight - (line.trailingWhitespaceWidth() - hangingWhitespaceWidth);
+
     runs.last().isEndOfLine = true;
     ++lineCount;
 }
@@ -944,7 +977,7 @@ static void createTextRuns(Layout::RunVector& runs, RenderBlockFlow& flow, unsig
     unsigned numberOfPrecedingLinesWithHyphen = 0;
     bool isEndOfContent = false;
     TextFragmentIterator textFragmentIterator = TextFragmentIterator(flow);
-    std::optional<unsigned> lastRunIndexOfPreviousLine;
+    Optional<unsigned> lastRunIndexOfPreviousLine;
     do {
         flow.setLogicalHeight(lineHeight * lineCount + borderAndPaddingBefore);
         LineState previousLine = line;
@@ -957,25 +990,38 @@ static void createTextRuns(Layout::RunVector& runs, RenderBlockFlow& flow, unsig
     } while (!isEndOfContent);
 }
 
-std::unique_ptr<Layout> create(RenderBlockFlow& flow)
+Ref<Layout> create(RenderBlockFlow& flow)
 {
     unsigned lineCount = 0;
     Layout::RunVector runs;
     createTextRuns(runs, flow, lineCount);
-    return Layout::create(runs, lineCount);
+    return Layout::create(runs, lineCount, flow);
 }
 
-std::unique_ptr<Layout> Layout::create(const RunVector& runVector, unsigned lineCount)
+Ref<Layout> Layout::create(const RunVector& runVector, unsigned lineCount, const RenderBlockFlow& blockFlow)
 {
     void* slot = WTF::fastMalloc(sizeof(Layout) + sizeof(Run) * runVector.size());
-    return std::unique_ptr<Layout>(new (NotNull, slot) Layout(runVector, lineCount));
+    return adoptRef(*new (NotNull, slot) Layout(runVector, lineCount, blockFlow));
 }
 
-Layout::Layout(const RunVector& runVector, unsigned lineCount)
+Layout::Layout(const RunVector& runVector, unsigned lineCount, const RenderBlockFlow& blockFlow)
     : m_lineCount(lineCount)
     , m_runCount(runVector.size())
+    , m_blockFlowRenderer(blockFlow)
 {
     memcpy(m_runs, runVector.data(), m_runCount * sizeof(Run));
+}
+
+const RunResolver& Layout::runResolver() const
+{
+    if (!m_runResolver)
+        m_runResolver = makeUnique<RunResolver>(m_blockFlowRenderer, *this);
+    return *m_runResolver;
+}
+
+Layout::~Layout()
+{
+    simpleLineLayoutWillBeDeleted(*this);
 }
 
 }

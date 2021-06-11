@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,21 +29,18 @@
 
 namespace JSC {
 
-class ExecState;
+class CallFrame;
+class VM;
 struct Instruction;
 
 namespace LLInt {
 
-// Tells you where to jump to if you want to return-to-throw, after you've already
-// set up all information needed to throw the exception.
-Instruction* returnToThrowForThrownException(ExecState*);
-
 // Gives you a PC that you can tell the interpreter to go to, which when advanced
 // between 1 and 9 slots will give you an "instruction" that threads to the
 // interpreter's exception handler.
-Instruction* returnToThrow(ExecState*);
+Instruction* returnToThrow(VM&);
 
 // Use this when you're throwing to a call thunk.
-void* callToThrow(ExecState*);
+void* callToThrow(VM&);
 
 } } // namespace JSC::LLInt

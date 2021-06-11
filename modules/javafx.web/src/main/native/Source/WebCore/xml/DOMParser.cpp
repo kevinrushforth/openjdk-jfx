@@ -25,7 +25,7 @@
 namespace WebCore {
 
 inline DOMParser::DOMParser(Document& contextDocument)
-    : m_contextDocument(contextDocument.createWeakPtr())
+    : m_contextDocument(makeWeakPtr(contextDocument))
 {
 }
 
@@ -46,7 +46,7 @@ ExceptionOr<Ref<Document>> DOMParser::parseFromString(const String& string, cons
         document->setURL(m_contextDocument->url());
         document->setSecurityOriginPolicy(m_contextDocument->securityOriginPolicy());
     }
-    return WTFMove(document);
+    return document;
 }
 
 } // namespace WebCore

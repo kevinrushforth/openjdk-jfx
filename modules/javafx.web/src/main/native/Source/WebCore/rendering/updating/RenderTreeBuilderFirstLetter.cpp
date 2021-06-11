@@ -39,14 +39,14 @@ namespace WebCore {
 
 static RenderStyle styleForFirstLetter(const RenderBlock& firstLetterBlock, const RenderObject& firstLetterContainer)
 {
-    auto* containerFirstLetterStyle = firstLetterBlock.getCachedPseudoStyle(FIRST_LETTER, &firstLetterContainer.firstLineStyle());
+    auto* containerFirstLetterStyle = firstLetterBlock.getCachedPseudoStyle(PseudoId::FirstLetter, &firstLetterContainer.firstLineStyle());
     // FIXME: There appears to be some path where we have a first letter renderer without first letter style.
     ASSERT(containerFirstLetterStyle);
     auto firstLetterStyle = RenderStyle::clone(containerFirstLetterStyle ? *containerFirstLetterStyle : firstLetterContainer.firstLineStyle());
 
     // If we have an initial letter drop that is >= 1, then we need to force floating to be on.
     if (firstLetterStyle.initialLetterDrop() >= 1 && !firstLetterStyle.isFloating())
-        firstLetterStyle.setFloating(firstLetterStyle.isLeftToRightDirection() ? LeftFloat : RightFloat);
+        firstLetterStyle.setFloating(firstLetterStyle.isLeftToRightDirection() ? Float::Left : Float::Right);
 
     // We have to compute the correct font-size for the first-letter if it has an initial letter height set.
     auto* paragraph = firstLetterContainer.isRenderBlockFlow() ? &firstLetterContainer : firstLetterContainer.containingBlock();
@@ -56,7 +56,7 @@ static RenderStyle styleForFirstLetter(const RenderBlock& firstLetterBlock, cons
         // For an N-line first-letter and for alphabetic baselines, the cap-height of the first letter needs to equal (N-1)*line-height of paragraph lines + cap-height of the paragraph
         // Mathematically we can't rely on font-size, since font().height() doesn't necessarily match. For reliability, the best approach is simply to
         // compare the final measured cap-heights of the two fonts in order to get to the closest possible value.
-        firstLetterStyle.setLineBoxContain(LineBoxContainInitialLetter);
+        firstLetterStyle.setLineBoxContain({ LineBoxContain::InitialLetter });
         int lineHeight = paragraph->style().computedLineHeight();
 
         // Set the font to be one line too big and then ratchet back to get to a precise fit. We can't just set the desired font size based off font height metrics
@@ -66,7 +66,7 @@ static RenderStyle styleForFirstLetter(const RenderBlock& firstLetterBlock, cons
         float startingFontSize = ((firstLetterStyle.initialLetterHeight() - 1) * lineHeight + paragraph->style().fontMetrics().capHeight()) / capRatio;
         newFontDescription.setSpecifiedSize(startingFontSize);
         newFontDescription.setComputedSize(startingFontSize);
-        firstLetterStyle.setFontDescription(newFontDescription);
+        firstLetterStyle.setFontDescription(WTFMove(newFontDescription));
         firstLetterStyle.fontCascade().update(firstLetterStyle.fontCascade().fontSelector());
 
         int desiredCapHeight = (firstLetterStyle.initialLetterHeight() - 1) * lineHeight + paragraph->style().fontMetrics().capHeight();
@@ -75,16 +75,18 @@ static RenderStyle styleForFirstLetter(const RenderBlock& firstLetterBlock, cons
             auto newFontDescription = firstLetterStyle.fontDescription();
             newFontDescription.setSpecifiedSize(newFontDescription.specifiedSize() - 1);
             newFontDescription.setComputedSize(newFontDescription.computedSize() -1);
-            firstLetterStyle.setFontDescription(newFontDescription);
+            firstLetterStyle.setFontDescription(WTFMove(newFontDescription));
             firstLetterStyle.fontCascade().update(firstLetterStyle.fontCascade().fontSelector());
             actualCapHeight = firstLetterStyle.fontMetrics().capHeight();
         }
     }
 
+    firstLetterStyle.setStyleType(PseudoId::FirstLetter);
     // Force inline display (except for floating first-letters).
-    firstLetterStyle.setDisplay(firstLetterStyle.isFloating() ? BLOCK : INLINE);
+    firstLetterStyle.setDisplay(firstLetterStyle.isFloating() ? DisplayType::Block : DisplayType::Inline);
     // CSS2 says first-letter can't be positioned.
-    firstLetterStyle.setPosition(StaticPosition);
+    firstLetterStyle.setPosition(PositionType::Static);
+
     return firstLetterStyle;
 }
 
@@ -121,7 +123,7 @@ RenderTreeBuilder::FirstLetter::FirstLetter(RenderTreeBuilder& builder)
 
 void RenderTreeBuilder::FirstLetter::updateAfterDescendants(RenderBlock& block)
 {
-    if (!block.style().hasPseudoStyle(FIRST_LETTER))
+    if (!block.style().hasPseudoStyle(PseudoId::FirstLetter))
         return;
     if (!supportsFirstLetter(block))
         return;
@@ -140,7 +142,7 @@ void RenderTreeBuilder::FirstLetter::updateAfterDescendants(RenderBlock& block)
 
     // If the child already has style, then it has already been created, so we just want
     // to update it.
-    if (firstLetterRenderer->parent()->style().styleType() == FIRST_LETTER) {
+    if (firstLetterRenderer->parent()->style().styleType() == PseudoId::FirstLetter) {
         updateStyle(block, *firstLetterRenderer);
         return;
     }
@@ -170,7 +172,7 @@ void RenderTreeBuilder::FirstLetter::updateStyle(RenderBlock& firstLetterBlock, 
     if (Style::determineChange(firstLetter->style(), pseudoStyle) == Style::Detach) {
         // The first-letter renderer needs to be replaced. Create a new renderer of the right type.
         RenderPtr<RenderBoxModelObject> newFirstLetter;
-        if (pseudoStyle.display() == INLINE)
+        if (pseudoStyle.display() == DisplayType::Inline)
             newFirstLetter = createRenderer<RenderInline>(firstLetterBlock.document(), WTFMove(pseudoStyle));
         else
             newFirstLetter = createRenderer<RenderBlockFlow>(firstLetterBlock.document(), WTFMove(pseudoStyle));
@@ -185,15 +187,15 @@ void RenderTreeBuilder::FirstLetter::updateStyle(RenderBlock& firstLetterBlock, 
             m_builder.attach(*newFirstLetter, WTFMove(toMove));
         }
 
-        RenderObject* nextSibling = firstLetter->nextSibling();
         if (RenderTextFragment* remainingText = downcast<RenderBoxModelObject>(*firstLetter).firstLetterRemainingText()) {
             ASSERT(remainingText->isAnonymous() || remainingText->textNode()->renderer() == remainingText);
             // Replace the old renderer with the new one.
             remainingText->setFirstLetter(*newFirstLetter);
             newFirstLetter->setFirstLetterRemainingText(*remainingText);
         }
+        WeakPtr<RenderObject> nextSibling = makeWeakPtr(firstLetter->nextSibling());
         m_builder.destroy(*firstLetter);
-        m_builder.attach(*firstLetterContainer, WTFMove(newFirstLetter), nextSibling);
+        m_builder.attach(*firstLetterContainer, WTFMove(newFirstLetter), nextSibling.get());
         return;
     }
 
@@ -202,18 +204,20 @@ void RenderTreeBuilder::FirstLetter::updateStyle(RenderBlock& firstLetterBlock, 
 
 void RenderTreeBuilder::FirstLetter::createRenderers(RenderBlock& firstLetterBlock, RenderText& currentTextChild)
 {
-    RenderElement* firstLetterContainer = currentTextChild.parent();
+    RenderElement* textContentParent = currentTextChild.parent();
+    RenderElement* firstLetterContainer = nullptr;
+    if (auto* wrapperInlineForDisplayContents = currentTextChild.inlineWrapperForDisplayContents())
+        firstLetterContainer = wrapperInlineForDisplayContents->parent();
+    else
+        firstLetterContainer = textContentParent;
     auto pseudoStyle = styleForFirstLetter(firstLetterBlock, *firstLetterContainer);
     RenderPtr<RenderBoxModelObject> newFirstLetter;
-    if (pseudoStyle.display() == INLINE)
+    if (pseudoStyle.display() == DisplayType::Inline)
         newFirstLetter = createRenderer<RenderInline>(firstLetterBlock.document(), WTFMove(pseudoStyle));
     else
         newFirstLetter = createRenderer<RenderBlockFlow>(firstLetterBlock.document(), WTFMove(pseudoStyle));
     newFirstLetter->initializeStyle();
     newFirstLetter->setIsFirstLetter();
-
-    auto& firstLetter = *newFirstLetter;
-    m_builder.attach(*firstLetterContainer, WTFMove(newFirstLetter), &currentTextChild);
 
     // The original string is going to be either a generated content string or a DOM node's
     // string. We want the original string before it got transformed in case first-letter has
@@ -247,7 +251,9 @@ void RenderTreeBuilder::FirstLetter::createRenderers(RenderBlock& firstLetterBlo
         }
 
         auto* textNode = currentTextChild.textNode();
-        auto* beforeChild = currentTextChild.nextSibling();
+        auto beforeChild = makeWeakPtr(currentTextChild.nextSibling());
+        auto inlineWrapperForDisplayContents = makeWeakPtr(currentTextChild.inlineWrapperForDisplayContents());
+        auto hasInlineWrapperForDisplayContents = inlineWrapperForDisplayContents.get();
         m_builder.destroy(currentTextChild);
 
         // Construct a text fragment for the text after the first letter.
@@ -260,13 +266,18 @@ void RenderTreeBuilder::FirstLetter::createRenderers(RenderBlock& firstLetterBlo
             newRemainingText = createRenderer<RenderTextFragment>(firstLetterBlock.document(), oldText, length, oldText.length() - length);
 
         RenderTextFragment& remainingText = *newRemainingText;
-        m_builder.attach(*firstLetterContainer, WTFMove(newRemainingText), beforeChild);
+        ASSERT_UNUSED(hasInlineWrapperForDisplayContents, hasInlineWrapperForDisplayContents == inlineWrapperForDisplayContents.get());
+        remainingText.setInlineWrapperForDisplayContents(inlineWrapperForDisplayContents.get());
+        m_builder.attach(*textContentParent, WTFMove(newRemainingText), beforeChild.get());
+
+        // FIXME: Make attach the final step so that we don't need to keep firstLetter around.
+        auto& firstLetter = *newFirstLetter;
         remainingText.setFirstLetter(firstLetter);
         firstLetter.setFirstLetterRemainingText(remainingText);
+        m_builder.attach(*firstLetterContainer, WTFMove(newFirstLetter), &remainingText);
 
-        // construct text fragment for the first letter
+        // Construct text fragment for the first letter.
         auto letter = createRenderer<RenderTextFragment>(firstLetterBlock.document(), oldText, 0, length);
-
         m_builder.attach(firstLetter, WTFMove(letter));
     }
 }

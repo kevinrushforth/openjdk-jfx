@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,29 +32,27 @@
 
 namespace JSC { namespace Wasm {
 
-MacroAssemblerCodeRef throwExceptionFromWasmThunkGenerator(const AbstractLocker&);
-MacroAssemblerCodeRef throwStackOverflowFromWasmThunkGenerator(const AbstractLocker&);
-MacroAssemblerCodeRef triggerOMGTierUpThunkGenerator(const AbstractLocker&);
+MacroAssemblerCodeRef<JITThunkPtrTag> throwExceptionFromWasmThunkGenerator(const AbstractLocker&);
+MacroAssemblerCodeRef<JITThunkPtrTag> throwStackOverflowFromWasmThunkGenerator(const AbstractLocker&);
+MacroAssemblerCodeRef<JITThunkPtrTag> triggerOMGEntryTierUpThunkGenerator(const AbstractLocker&);
 
-typedef MacroAssemblerCodeRef (*ThunkGenerator)(const AbstractLocker&);
+typedef MacroAssemblerCodeRef<JITThunkPtrTag> (*ThunkGenerator)(const AbstractLocker&);
 
 class Thunks {
+    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(Thunks);
 public:
     static void initialize();
     static Thunks& singleton();
 
-    void setThrowWasmException(ThrowWasmException);
-    ThrowWasmException throwWasmException();
-
-    MacroAssemblerCodeRef stub(ThunkGenerator);
-    MacroAssemblerCodeRef stub(const AbstractLocker&, ThunkGenerator);
-    MacroAssemblerCodeRef existingStub(ThunkGenerator);
+    MacroAssemblerCodeRef<JITThunkPtrTag> stub(ThunkGenerator);
+    MacroAssemblerCodeRef<JITThunkPtrTag> stub(const AbstractLocker&, ThunkGenerator);
+    MacroAssemblerCodeRef<JITThunkPtrTag> existingStub(ThunkGenerator);
 
 private:
     Thunks() = default;
 
-    HashMap<ThunkGenerator, MacroAssemblerCodeRef> m_stubs;
-    ThrowWasmException m_throwWasmException { nullptr };
+    HashMap<ThunkGenerator, MacroAssemblerCodeRef<JITThunkPtrTag>> m_stubs;
     Lock m_lock;
 };
 

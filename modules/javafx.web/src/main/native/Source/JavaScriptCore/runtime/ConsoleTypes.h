@@ -25,9 +25,11 @@
 
 #pragma once
 
+#include <wtf/Forward.h>
+
 namespace JSC {
 
-enum class MessageSource {
+enum class MessageSource : uint8_t {
     XML,
     JS,
     Network,
@@ -38,12 +40,15 @@ enum class MessageSource {
     CSS,
     Security,
     ContentBlocker,
-    Other,
     Media,
+    MediaSource,
     WebRTC,
+    ITPDebug,
+    AdClickAttribution,
+    Other,
 };
 
-enum class MessageType {
+enum class MessageType : uint8_t {
     Log,
     Dir,
     DirXML,
@@ -57,17 +62,55 @@ enum class MessageType {
     Timing,
     Profile,
     ProfileEnd,
+    Image,
 };
 
-enum class MessageLevel {
-    Log = 1,
-    Warning = 2,
-    Error = 3,
-    Debug = 4,
-    Info = 5,
+enum class MessageLevel : uint8_t {
+    Log,
+    Warning,
+    Error,
+    Debug,
+    Info,
 };
 
 } // namespace JSC
+
+namespace WTF {
+
+template<> struct EnumTraits<JSC::MessageSource> {
+    using values = EnumValues<
+        JSC::MessageSource,
+        JSC::MessageSource::XML,
+        JSC::MessageSource::JS,
+        JSC::MessageSource::Network,
+        JSC::MessageSource::ConsoleAPI,
+        JSC::MessageSource::Storage,
+        JSC::MessageSource::AppCache,
+        JSC::MessageSource::Rendering,
+        JSC::MessageSource::CSS,
+        JSC::MessageSource::Security,
+        JSC::MessageSource::ContentBlocker,
+        JSC::MessageSource::Media,
+        JSC::MessageSource::MediaSource,
+        JSC::MessageSource::WebRTC,
+        JSC::MessageSource::ITPDebug,
+        JSC::MessageSource::AdClickAttribution,
+        JSC::MessageSource::Other
+    >;
+};
+
+template<> struct EnumTraits<JSC::MessageLevel> {
+    using values = EnumValues<
+        JSC::MessageLevel,
+        JSC::MessageLevel::Log,
+        JSC::MessageLevel::Warning,
+        JSC::MessageLevel::Error,
+        JSC::MessageLevel::Debug,
+        JSC::MessageLevel::Info
+    >;
+};
+
+} // namespace WTF
 
 using JSC::MessageSource;
 using JSC::MessageType;

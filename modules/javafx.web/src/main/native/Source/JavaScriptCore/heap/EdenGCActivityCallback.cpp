@@ -25,7 +25,6 @@
 
 #include "config.h"
 #include "EdenGCActivityCallback.h"
-#include "HeapInlines.h"
 
 #include "VM.h"
 
@@ -36,21 +35,20 @@ EdenGCActivityCallback::EdenGCActivityCallback(Heap* heap)
 {
 }
 
-void EdenGCActivityCallback::doCollection()
+void EdenGCActivityCallback::doCollection(VM& vm)
 {
-    m_vm->heap.collectAsync(CollectionScope::Eden);
+    vm.heap.collectAsync(CollectionScope::Eden);
 }
 
-Seconds EdenGCActivityCallback::lastGCLength()
+Seconds EdenGCActivityCallback::lastGCLength(Heap& heap)
 {
-    return m_vm->heap.lastEdenGCLength();
+    return heap.lastEdenGCLength();
 }
 
-double EdenGCActivityCallback::deathRate()
+double EdenGCActivityCallback::deathRate(Heap& heap)
 {
-    Heap* heap = &m_vm->heap;
-    size_t sizeBefore = heap->sizeBeforeLastEdenCollection();
-    size_t sizeAfter = heap->sizeAfterLastEdenCollection();
+    size_t sizeBefore = heap.sizeBeforeLastEdenCollection();
+    size_t sizeAfter = heap.sizeAfterLastEdenCollection();
     if (!sizeBefore)
         return 1.0;
     if (sizeAfter > sizeBefore) {

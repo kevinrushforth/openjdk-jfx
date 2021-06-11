@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,9 +25,9 @@
 
 #pragma once
 
+#include "CacheableIdentifier.h"
 #include "ClassInfo.h"
 #include "CodeLocation.h"
-#include "CodeOrigin.h"
 #include "IndexingType.h"
 #include "JITStubRoutine.h"
 #include "Structure.h"
@@ -38,9 +38,10 @@ class Symbol;
 
 #if ENABLE(JIT)
 
+class ArrayProfile;
 class StructureStubInfo;
 
-enum JITArrayMode {
+enum JITArrayMode : uint8_t {
     JITInt32,
     JITDouble,
     JITContiguous,
@@ -226,51 +227,46 @@ inline JITArrayMode jitArrayModeForStructure(Structure* structure)
 struct ByValInfo {
     ByValInfo() { }
 
-    ByValInfo(unsigned bytecodeIndex, CodeLocationJump notIndexJump, CodeLocationJump badTypeJump, CodeLocationLabel exceptionHandler, JITArrayMode arrayMode, ArrayProfile* arrayProfile, int16_t badTypeJumpToDone, int16_t badTypeJumpToNextHotPath, int16_t returnAddressToSlowPath)
-        : bytecodeIndex(bytecodeIndex)
-        , notIndexJump(notIndexJump)
+    ByValInfo(BytecodeIndex bytecodeIndex, CodeLocationJump<JSInternalPtrTag> notIndexJump, CodeLocationJump<JSInternalPtrTag> badTypeJump, CodeLocationLabel<ExceptionHandlerPtrTag> exceptionHandler, JITArrayMode arrayMode, ArrayProfile* arrayProfile, CodeLocationLabel<JSInternalPtrTag> doneTarget, CodeLocationLabel<JSInternalPtrTag> badTypeNextHotPathTarget, CodeLocationLabel<JSInternalPtrTag> slowPathTarget)
+        : notIndexJump(notIndexJump)
         , badTypeJump(badTypeJump)
         , exceptionHandler(exceptionHandler)
-        , arrayMode(arrayMode)
+        , doneTarget(doneTarget)
+        , badTypeNextHotPathTarget(badTypeNextHotPathTarget)
+        , slowPathTarget(slowPathTarget)
         , arrayProfile(arrayProfile)
-        , badTypeJumpToDone(badTypeJumpToDone)
-        , badTypeJumpToNextHotPath(badTypeJumpToNextHotPath)
-        , returnAddressToSlowPath(returnAddressToSlowPath)
+        , bytecodeIndex(bytecodeIndex)
         , slowPathCount(0)
         , stubInfo(nullptr)
+        , arrayMode(arrayMode)
         , tookSlowPath(false)
         , seen(false)
     {
     }
 
-    unsigned bytecodeIndex;
-    CodeLocationJump notIndexJump;
-    CodeLocationJump badTypeJump;
-    CodeLocationLabel exceptionHandler;
-    JITArrayMode arrayMode; // The array mode that was baked into the inline JIT code.
+    void visitAggregate(SlotVisitor&);
+
+    CodeLocationJump<JSInternalPtrTag> notIndexJump;
+    CodeLocationJump<JSInternalPtrTag> badTypeJump;
+    CodeLocationLabel<ExceptionHandlerPtrTag> exceptionHandler;
+    CodeLocationLabel<JSInternalPtrTag> doneTarget;
+    CodeLocationLabel<JSInternalPtrTag> badTypeNextHotPathTarget;
+    CodeLocationLabel<JSInternalPtrTag> slowPathTarget;
     ArrayProfile* arrayProfile;
-    int16_t badTypeJumpToDone;
-    int16_t badTypeJumpToNextHotPath;
-    int16_t returnAddressToSlowPath;
+    BytecodeIndex bytecodeIndex;
     unsigned slowPathCount;
     RefPtr<JITStubRoutine> stubRoutine;
-    Identifier cachedId;
-    WriteBarrier<Symbol> cachedSymbol;
+    CacheableIdentifier cachedId; // Once we set cachedId, we must not change the value. JIT code relies on that configured cachedId is marked and retained by CodeBlock through ByValInfo.
     StructureStubInfo* stubInfo;
+    JITArrayMode arrayMode; // The array mode that was baked into the inline JIT code.
     bool tookSlowPath : 1;
     bool seen : 1;
 };
 
-inline unsigned getByValInfoBytecodeIndex(ByValInfo* info)
+inline BytecodeIndex getByValInfoBytecodeIndex(ByValInfo* info)
 {
     return info->bytecodeIndex;
 }
-
-typedef HashMap<CodeOrigin, ByValInfo*, CodeOriginApproximateHash> ByValInfoMap;
-
-#else // ENABLE(JIT)
-
-typedef HashMap<int, void*> ByValInfoMap;
 
 #endif // ENABLE(JIT)
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -49,7 +49,7 @@ public:
     template<typename Type>
     static void ensureHeap(api::IsoHeap<Type>&);
 
-    static void scavenge();
+    BEXPORT static void scavenge();
 
     template<typename Type>
     static void scavenge(api::IsoHeap<Type>&);
@@ -60,8 +60,8 @@ private:
     template<typename Config, typename Type>
     static void* allocateImpl(api::IsoHeap<Type>&, bool abortOnFailure);
 
-    template<typename Config>
-    void* allocateFast(unsigned offset, bool abortOnFailure);
+    template<typename Config, typename Type>
+    void* allocateFast(api::IsoHeap<Type>&, unsigned offset, bool abortOnFailure);
 
     template<typename Config, typename Type>
     static void* allocateSlow(api::IsoHeap<Type>&, bool abortOnFailure);
@@ -69,8 +69,8 @@ private:
     template<typename Config, typename Type>
     static void deallocateImpl(api::IsoHeap<Type>&, void* p);
 
-    template<typename Config>
-    void deallocateFast(unsigned offset, void* p);
+    template<typename Config, typename Type>
+    void deallocateFast(api::IsoHeap<Type>&, unsigned offset, void* p);
 
     template<typename Config, typename Type>
     static void deallocateSlow(api::IsoHeap<Type>&, void* p);
@@ -93,15 +93,15 @@ private:
     template<typename Func>
     void forEachEntry(const Func&);
 
-    static bool isUsingDebugHeap();
-
-    struct DebugMallocResult {
-        void* ptr { nullptr };
-        bool usingDebugHeap { false };
+    enum class MallocFallbackState : uint8_t {
+        Undecided,
+        FallBackToMalloc,
+        DoNotFallBack
     };
 
-    BEXPORT static DebugMallocResult debugMalloc(size_t);
-    BEXPORT static bool debugFree(void*);
+    BEXPORT static MallocFallbackState s_mallocFallbackState;
+
+    BEXPORT static void determineMallocFallbackState();
 
     IsoTLSEntry* m_lastEntry { nullptr };
     unsigned m_extent { 0 };
@@ -109,7 +109,7 @@ private:
     char m_data[1];
 
 #if HAVE_PTHREAD_MACHDEP_H
-    static const pthread_key_t tlsKey = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY1;
+    static constexpr pthread_key_t tlsKey = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY1;
 #else
     BEXPORT static bool s_didInitialize;
     BEXPORT static pthread_key_t s_tlsKey;

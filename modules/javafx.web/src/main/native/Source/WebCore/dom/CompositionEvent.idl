@@ -23,9 +23,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  */
 
-[
-    Constructor(DOMString type, optional CompositionEventInit eventInitDict),
-] interface CompositionEvent : UIEvent {
+interface CompositionEvent : UIEvent {
+    constructor(DOMString type, optional CompositionEventInit eventInitDict);
 
     readonly attribute DOMString data;
 
@@ -33,7 +32,7 @@
     void initCompositionEvent(optional DOMString typeArg = "undefined",
                               optional boolean canBubbleArg = false,
                               optional boolean cancelableArg = false,
-                              optional DOMWindow? viewArg = null,
+                              optional WindowProxy? viewArg = null,
                               optional DOMString dataArg = "undefined");
 
 };

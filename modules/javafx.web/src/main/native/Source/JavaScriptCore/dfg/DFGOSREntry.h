@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, 2013, 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,14 +25,16 @@
 
 #pragma once
 
+#include "CodeLocation.h"
 #include "DFGAbstractValue.h"
 #include "DFGFlushFormat.h"
+#include "MacroAssemblerCodeRef.h"
 #include "Operands.h"
 #include <wtf/BitVector.h>
 
 namespace JSC {
 
-class ExecState;
+class CallFrame;
 class CodeBlock;
 
 namespace DFG {
@@ -52,8 +54,8 @@ struct OSREntryReshuffling {
 };
 
 struct OSREntryData {
-    unsigned m_bytecodeIndex;
-    unsigned m_machineCodeOffset;
+    BytecodeIndex m_bytecodeIndex;
+    CodeLocationLabel<OSREntryPtrTag> m_machineCode;
     Operands<AbstractValue> m_expectedValues;
     // Use bitvectors here because they tend to only require one word.
     BitVector m_localsForcedDouble;
@@ -65,7 +67,7 @@ struct OSREntryData {
     void dump(PrintStream&) const;
 };
 
-inline unsigned getOSREntryDataBytecodeIndex(OSREntryData* osrEntryData)
+inline BytecodeIndex getOSREntryDataBytecodeIndex(OSREntryData* osrEntryData)
 {
     return osrEntryData->m_bytecodeIndex;
 }
@@ -73,19 +75,19 @@ inline unsigned getOSREntryDataBytecodeIndex(OSREntryData* osrEntryData)
 struct CatchEntrypointData {
     // We use this when doing OSR entry at catch. We prove the arguments
     // are of the expected type before entering at a catch block.
-    void* machineCode;
+    MacroAssemblerCodePtr<ExceptionHandlerPtrTag> machineCode;
     Vector<FlushFormat> argumentFormats;
-    unsigned bytecodeIndex;
+    BytecodeIndex bytecodeIndex;
 };
 
 // Returns a pointer to a data buffer that the OSR entry thunk will recognize and
 // parse. If this returns null, it means
-void* prepareOSREntry(ExecState*, CodeBlock*, unsigned bytecodeIndex);
+void* prepareOSREntry(VM&, CallFrame*, CodeBlock*, BytecodeIndex);
 
 // If null is returned, we can't OSR enter. If it's not null, it's the PC to jump to.
-void* prepareCatchOSREntry(ExecState*, CodeBlock*, unsigned bytecodeIndex);
+MacroAssemblerCodePtr<ExceptionHandlerPtrTag> prepareCatchOSREntry(VM&, CallFrame*, CodeBlock* baselineCodeBlock, CodeBlock* optimizedCodeBlock, BytecodeIndex);
 #else
-inline void* prepareOSREntry(ExecState*, CodeBlock*, unsigned) { return 0; }
+inline MacroAssemblerCodePtr<ExceptionHandlerPtrTag> prepareOSREntry(VM&, CallFrame*, CodeBlock*, BytecodeIndex) { return nullptr; }
 #endif
 
 } } // namespace JSC::DFG

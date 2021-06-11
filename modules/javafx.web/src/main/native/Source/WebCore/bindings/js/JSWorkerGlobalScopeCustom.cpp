@@ -26,8 +26,9 @@
 #include "config.h"
 #include "JSWorkerGlobalScope.h"
 
+#include "JSDOMExceptionHandling.h"
 #include "WorkerGlobalScope.h"
-
+#include <JavaScriptCore/JSMicrotask.h>
 
 namespace WebCore {
 using namespace JSC;
@@ -45,6 +46,23 @@ void JSWorkerGlobalScope::visitAdditionalChildren(SlotVisitor& visitor)
     // even though WorkerGlobalScope is an EventTarget, JSWorkerGlobalScope does not subclass
     // JSEventTarget, so we need to do this here.
     wrapped().visitJSEventListeners(visitor);
+}
+
+JSValue JSWorkerGlobalScope::queueMicrotask(JSGlobalObject& lexicalGlobalObject, CallFrame& callFrame)
+{
+    VM& vm = lexicalGlobalObject.vm();
+    auto scope = DECLARE_THROW_SCOPE(vm);
+
+    if (UNLIKELY(callFrame.argumentCount() < 1))
+        return throwException(&lexicalGlobalObject, scope, createNotEnoughArgumentsError(&lexicalGlobalObject));
+
+    JSValue functionValue = callFrame.uncheckedArgument(0);
+    if (UNLIKELY(!functionValue.isCallable(vm)))
+        return JSValue::decode(throwArgumentMustBeFunctionError(lexicalGlobalObject, scope, 0, "callback", "WorkerGlobalScope", "queueMicrotask"));
+
+    scope.release();
+    Base::queueMicrotask(JSC::createJSMicrotask(vm, functionValue));
+    return jsUndefined();
 }
 
 } // namespace WebCore

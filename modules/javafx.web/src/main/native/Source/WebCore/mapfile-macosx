@@ -6,10 +6,10 @@
                _WTFReportArgumentAssertionFailure
                _WTFCrash
                __ZN3WTF10fastMallocEm
-               __ZN3WTF10stringFreeEPv
                __ZN3WTF6StringC1EPKc
-               __ZN3WTF6StringC1EPKtj
+               __ZN3WTF6StringC1EPKDsj
                __ZN3WTF7RunLoop4mainEv
+               __ZN3WTF7RunLoop8dispatchEONS_8FunctionIFvvEEE
                __ZN3WTF8fastFreeEPv
                __ZN3WTF4Lock10unlockSlowEv
                __ZN3WTF4Lock8lockSlowEv
@@ -113,6 +113,8 @@
                _JSValueToObject
                _JSValueToStringCopy
                _JSValueUnprotect
+               __ZN3JSC6Config23enableRestrictedOptionsEv
+               __ZN3JSC6Config25disableFreezingForTestingEv
                __ZN3JSC16slowValidateCellEPNS_6JSCellE
                __ZN3JSC14setNeverInlineEPK15OpaqueJSContextPK13OpaqueJSValue
                __ZN3JSC19numberOfDFGCompilesEPK15OpaqueJSContextPK13OpaqueJSValue
@@ -822,7 +824,6 @@
                _Java_com_sun_webkit_dom_HTMLElementImpl_getLangImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_getOuterTextImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_getSpellcheckImpl
-               _Java_com_sun_webkit_dom_HTMLElementImpl_getTabIndexImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_getTitleImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_getTranslateImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_getWebkitdropzoneImpl
@@ -838,7 +839,6 @@
                _Java_com_sun_webkit_dom_HTMLElementImpl_setLangImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_setOuterTextImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_setSpellcheckImpl
-               _Java_com_sun_webkit_dom_HTMLElementImpl_setTabIndexImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_setIdImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_setTitleImpl
                _Java_com_sun_webkit_dom_HTMLElementImpl_setTranslateImpl
@@ -1757,6 +1757,7 @@
                _Java_com_sun_webkit_WebPage_twkStop
                _Java_com_sun_webkit_WebPage_twkStopAll
                _Java_com_sun_webkit_WebPage_twkUpdateContent
+               _Java_com_sun_webkit_WebPage_twkUpdateRendering
                _Java_com_sun_webkit_WebPage_twkWorkerThreadCount
                _Java_com_sun_webkit_WebPage_twkDoJSCGarbageCollection
                _Java_com_sun_webkit_dom_EventListenerImpl_twkCreatePeer

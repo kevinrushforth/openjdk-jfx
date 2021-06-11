@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "AllocationFailureMode.h"
 #include "FreeList.h"
 #include "MarkedBlock.h"
 #include <wtf/Noncopyable.h>
@@ -33,17 +34,18 @@ namespace JSC {
 
 class BlockDirectory;
 class GCDeferralContext;
-class ThreadLocalCache;
+class Heap;
 
 class LocalAllocator : public BasicRawSentinelNode<LocalAllocator> {
     WTF_MAKE_NONCOPYABLE(LocalAllocator);
 
 public:
-    LocalAllocator(ThreadLocalCache*, BlockDirectory*);
-    LocalAllocator(LocalAllocator&&);
+    LocalAllocator(BlockDirectory*);
     ~LocalAllocator();
 
-    void* allocate(GCDeferralContext*, AllocationFailureMode);
+    void* allocate(Heap&, GCDeferralContext*, AllocationFailureMode);
+
+    unsigned cellSize() const { return m_freeList.cellSize(); }
 
     void stopAllocating();
     void prepareForAllocation();
@@ -55,29 +57,26 @@ public:
 
     bool isFreeListedCell(const void*) const;
 
-    ThreadLocalCache* tlc() const { return m_tlc; }
-
 private:
     friend class BlockDirectory;
 
     void reset();
-    JS_EXPORT_PRIVATE void* allocateSlowCase(GCDeferralContext*, AllocationFailureMode failureMode);
+    JS_EXPORT_PRIVATE void* allocateSlowCase(Heap&, GCDeferralContext*, AllocationFailureMode);
     void didConsumeFreeList();
     void* tryAllocateWithoutCollecting();
     void* tryAllocateIn(MarkedBlock::Handle*);
     void* allocateIn(MarkedBlock::Handle*);
-    ALWAYS_INLINE void doTestCollectionsIfNeeded(GCDeferralContext*);
+    ALWAYS_INLINE void doTestCollectionsIfNeeded(Heap&, GCDeferralContext*);
 
-    ThreadLocalCache* m_tlc;
     BlockDirectory* m_directory;
-    unsigned m_cellSize;
     FreeList m_freeList;
+
     MarkedBlock::Handle* m_currentBlock { nullptr };
     MarkedBlock::Handle* m_lastActiveBlock { nullptr };
 
     // After you do something to a block based on one of these cursors, you clear the bit in the
     // corresponding bitvector and leave the cursor where it was.
-    size_t m_allocationCursor { 0 }; // Points to the next block that is a candidate for allocation.
+    unsigned m_allocationCursor { 0 }; // Points to the next block that is a candidate for allocation.
 };
 
 inline ptrdiff_t LocalAllocator::offsetOfFreeList()
@@ -87,7 +86,7 @@ inline ptrdiff_t LocalAllocator::offsetOfFreeList()
 
 inline ptrdiff_t LocalAllocator::offsetOfCellSize()
 {
-    return OBJECT_OFFSETOF(LocalAllocator, m_cellSize);
+    return OBJECT_OFFSETOF(LocalAllocator, m_freeList) + FreeList::offsetOfCellSize();
 }
 
 } // namespace JSC

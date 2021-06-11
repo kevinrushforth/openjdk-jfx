@@ -56,14 +56,14 @@ CredentialsContainer* NavigatorCredentials::credentials(Navigator& navigator)
 {
     if (!navigator.frame() || !navigator.frame()->document())
         return nullptr;
-    return NavigatorCredentials::from(&navigator)->credentials(navigator.frame()->document()->createWeakPtr());
+    return NavigatorCredentials::from(&navigator)->credentials(makeWeakPtr(*navigator.frame()->document()));
 }
 
 NavigatorCredentials* NavigatorCredentials::from(Navigator* navigator)
 {
     NavigatorCredentials* supplement = static_cast<NavigatorCredentials*>(Supplement<Navigator>::from(navigator, supplementName()));
     if (!supplement) {
-        auto newSupplement = std::make_unique<NavigatorCredentials>();
+        auto newSupplement = makeUnique<NavigatorCredentials>();
         supplement = newSupplement.get();
         provideTo(navigator, supplementName(), WTFMove(newSupplement));
     }

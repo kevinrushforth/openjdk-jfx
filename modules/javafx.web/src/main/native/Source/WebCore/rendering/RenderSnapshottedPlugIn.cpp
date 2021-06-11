@@ -53,7 +53,7 @@ WTF_MAKE_ISO_ALLOCATED_IMPL(RenderSnapshottedPlugIn);
 
 RenderSnapshottedPlugIn::RenderSnapshottedPlugIn(HTMLPlugInImageElement& element, RenderStyle&& style)
     : RenderEmbeddedObject(element, WTFMove(style))
-    , m_snapshotResource(std::make_unique<RenderImageResource>())
+    , m_snapshotResource(makeUnique<RenderImageResource>())
 {
     m_snapshotResource->initialize(*this);
 }
@@ -96,18 +96,18 @@ void RenderSnapshottedPlugIn::updateSnapshot(Image* image)
     if (!image)
         return;
 
-    m_snapshotResource->setCachedImage(new CachedImage(image, page().sessionID()));
+    m_snapshotResource->setCachedImage(new CachedImage(image, page().sessionID(), &page().cookieJar()));
     repaint();
 }
 
 void RenderSnapshottedPlugIn::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (paintInfo.phase == PaintPhaseForeground && plugInImageElement().displayState() < HTMLPlugInElement::Restarting) {
+    if (paintInfo.phase == PaintPhase::Foreground && plugInImageElement().displayState() < HTMLPlugInElement::Restarting) {
         paintSnapshot(paintInfo, paintOffset);
     }
 
-    PaintPhase newPhase = (paintInfo.phase == PaintPhaseChildOutlines) ? PaintPhaseOutline : paintInfo.phase;
-    newPhase = (newPhase == PaintPhaseChildBlockBackgrounds) ? PaintPhaseChildBlockBackground : newPhase;
+    PaintPhase newPhase = (paintInfo.phase == PaintPhase::ChildOutlines) ? PaintPhase::Outline : paintInfo.phase;
+    newPhase = (newPhase == PaintPhase::ChildBlockBackgrounds) ? PaintPhase::ChildBlockBackground : newPhase;
 
     PaintInfo paintInfoForChild(paintInfo);
     paintInfoForChild.phase = newPhase;
@@ -145,8 +145,7 @@ void RenderSnapshottedPlugIn::paintSnapshot(PaintInfo& paintInfo, const LayoutPo
         return;
 
     InterpolationQuality interpolation = chooseInterpolationQuality(context, *image, image, alignedRect.size());
-    ImageOrientationDescription orientationDescription(shouldRespectImageOrientation(), style().imageOrientation());
-    context.drawImage(*image, alignedRect, ImagePaintingOptions(orientationDescription, interpolation));
+    context.drawImage(*image, alignedRect, { imageOrientation(), interpolation });
 }
 
 CursorDirective RenderSnapshottedPlugIn::getCursor(const LayoutPoint& point, Cursor& overrideCursor) const

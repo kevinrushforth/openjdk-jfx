@@ -45,7 +45,10 @@ public:
         PluginCrashed,
         PluginBlockedByContentSecurityPolicy,
         InsecurePluginVersion,
+        UnsupportedPlugin,
+        PluginTooSmall
     };
+    PluginUnavailabilityReason pluginUnavailabilityReason() const { return m_pluginUnavailabilityReason; };
     WEBCORE_EXPORT void setPluginUnavailabilityReason(PluginUnavailabilityReason);
     WEBCORE_EXPORT void setPluginUnavailabilityReasonWithDescription(PluginUnavailabilityReason, const String& description);
 
@@ -58,6 +61,9 @@ public:
     bool allowsAcceleratedCompositing() const;
 
     LayoutRect unavailablePluginIndicatorBounds(const LayoutPoint& accumulatedOffset) const;
+
+    const String& pluginReplacementTextIfUnavailable() const { return m_unavailablePluginReplacementText; }
+
 protected:
     void paintReplaced(PaintInfo&, const LayoutPoint&) final;
     void paint(PaintInfo&, const LayoutPoint&) override;

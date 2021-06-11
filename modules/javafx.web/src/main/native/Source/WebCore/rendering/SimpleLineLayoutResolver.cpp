@@ -67,14 +67,7 @@ FloatRect RunResolver::Run::rect() const
     float baseline = computeBaselinePosition();
     FloatPoint position = linePosition(run.logicalLeft, baseline - resolver.m_ascent);
     FloatSize size = lineSize(run.logicalLeft, run.logicalRight, resolver.m_ascent + resolver.m_descent + resolver.m_visualOverflowOffset);
-    bool moveLineBreakToBaseline = false;
-    if (run.start == run.end && m_iterator != resolver.begin() && m_iterator.inQuirksMode()) {
-        auto previousRun = m_iterator;
-        --previousRun;
-        moveLineBreakToBaseline = !previousRun.simpleRun().isEndOfLine;
-    }
-    if (moveLineBreakToBaseline)
-        return FloatRect(FloatPoint(position.x(), baseline), FloatSize(size.width(), std::max<float>(0, resolver.m_ascent - resolver.m_baseline.toFloat())));
+
     return FloatRect(position, size);
 }
 
@@ -88,11 +81,37 @@ StringView RunResolver::Run::text() const
     return StringView(segment.text).substring(segment.toSegmentPosition(run.start), run.end - run.start);
 }
 
+const RenderObject& RunResolver::Run::renderer() const
+{
+    auto& run = m_iterator.simpleRun();
+    // FlowContents cannot differentiate empty runs.
+    ASSERT(run.start != run.end);
+    return m_iterator.resolver().m_flowContents.segmentForRun(run.start, run.end).renderer;
+}
+
+unsigned RunResolver::Run::localStart() const
+{
+    auto& run = m_iterator.simpleRun();
+    // FlowContents cannot differentiate empty runs.
+    ASSERT(run.start != run.end);
+    return m_iterator.resolver().m_flowContents.segmentForRun(run.start, run.end).toSegmentPosition(run.start);
+}
+
+unsigned RunResolver::Run::localEnd() const
+{
+    auto& run = m_iterator.simpleRun();
+    // FlowContents cannot differentiate empty runs.
+    ASSERT(run.start != run.end);
+    return m_iterator.resolver().m_flowContents.segmentForRun(run.start, run.end).toSegmentPosition(run.end);
+}
+
 RunResolver::Iterator::Iterator(const RunResolver& resolver, unsigned runIndex, unsigned lineIndex)
-    : m_resolver(resolver)
+    : m_layout(&resolver.m_layout)
+    , m_resolver(&resolver)
     , m_runIndex(runIndex)
     , m_lineIndex(lineIndex)
 {
+    ASSERT(&resolver == &m_layout->runResolver());
 }
 
 RunResolver::Iterator& RunResolver::Iterator::advance()
@@ -105,8 +124,8 @@ RunResolver::Iterator& RunResolver::Iterator::advance()
 
 RunResolver::Iterator& RunResolver::Iterator::advanceLines(unsigned lineCount)
 {
-    unsigned runCount = m_resolver.m_layout.runCount();
-    if (runCount == m_resolver.m_layout.lineCount()) {
+    unsigned runCount = layout().runCount();
+    if (runCount == layout().lineCount()) {
         m_runIndex = std::min(runCount, m_runIndex + lineCount);
         m_lineIndex = m_runIndex;
         return *this;
@@ -128,7 +147,6 @@ RunResolver::RunResolver(const RenderBlockFlow& flow, const Layout& layout)
     , m_ascent(flow.style().fontCascade().fontMetrics().ascent())
     , m_descent(flow.style().fontCascade().fontMetrics().descent())
     , m_visualOverflowOffset(visualOverflowForDecorations(flow.style(), nullptr).bottom)
-    , m_inQuirksMode(flow.document().inQuirksMode())
 {
 }
 
@@ -140,7 +158,7 @@ unsigned RunResolver::adjustLineIndexForStruts(LayoutUnit y, IndexType type, uns
     if (strut.lineBreak >= lineIndexCandidate)
         return lineIndexCandidate;
     unsigned strutIndex = 0;
-    std::optional<unsigned> lastIndexCandidate;
+    Optional<unsigned> lastIndexCandidate;
     auto top = strut.lineBreak * m_lineHeight;
     auto lineHeightWithOverflow = m_lineHeight;
     // If font is larger than the line height (glyphs overflow), use the font size when checking line boundaries.
@@ -182,7 +200,7 @@ unsigned RunResolver::lineIndexForHeight(LayoutUnit height, IndexType type) cons
     adjustedY = std::max<float>(adjustedY, 0);
     auto lineIndexCandidate =  std::min<unsigned>(adjustedY / m_lineHeight, m_layout.lineCount() - 1);
     if (m_layout.hasLineStruts())
-        return adjustLineIndexForStruts(y, type, lineIndexCandidate);
+        return adjustLineIndexForStruts(LayoutUnit(y), type, lineIndexCandidate);
     return lineIndexCandidate;
 }
 
@@ -199,6 +217,16 @@ WTF::IteratorRange<RunResolver::Iterator> RunResolver::rangeForRect(const Layout
     auto rangeEnd = rangeBegin;
     ASSERT(lastLine >= firstLine);
     rangeEnd.advanceLines(lastLine - firstLine + 1);
+    return { rangeBegin, rangeEnd };
+}
+
+WTF::IteratorRange<RunResolver::Iterator> RunResolver::rangeForLine(unsigned lineIndex) const
+{
+    auto rangeBegin = begin().advanceLines(lineIndex);
+    if (rangeBegin == end())
+        return { end(), end() };
+    auto rangeEnd = rangeBegin;
+    rangeEnd.advanceLines(1);
     return { rangeBegin, rangeEnd };
 }
 
@@ -265,18 +293,23 @@ WTF::IteratorRange<RunResolver::Iterator> RunResolver::rangeForRendererWithOffse
 {
     ASSERT(startOffset <= endOffset);
     auto range = rangeForRenderer(renderer);
+    if (range.begin() == range.end())
+        return { end(), end() };
     auto it = range.begin();
-    // Advance to the firt run with the start offset inside.
-    while (it != range.end() && (*it).end() <= startOffset)
+    auto localEnd = (*it).start() + endOffset;
+    // Advance to the first run before the start offset. Only the first node in a range can have a startOffset.
+    // Note that the start offset may coincide with the end of a run. The run is still considered so that we
+    // can return an empty rect, which conforms to the behavior of Element.getClientRects().
+    while (it != range.end() && (*it).end() < startOffset)
         ++it;
     if (it == range.end())
         return { end(), end() };
     auto rangeBegin = it;
     // Special case empty ranges that start at the edge of the run. Apparently normal line layout include those.
-    if (endOffset == startOffset && (*it).start() == endOffset)
+    if (localEnd == startOffset && (*it).start() == localEnd)
         return { rangeBegin, ++it };
     // Advance beyond the last run with the end offset.
-    while (it != range.end() && (*it).start() < endOffset)
+    while (it != range.end() && (*it).start() < localEnd)
         ++it;
     return { rangeBegin, it };
 }
@@ -303,8 +336,8 @@ const RenderObject& LineResolver::Iterator::renderer() const
     return m_runIterator.resolver().flowContents().segmentForRun(run.start(), run.end()).renderer;
 }
 
-LineResolver::LineResolver(const RenderBlockFlow& flow, const Layout& layout)
-    : m_runResolver(flow, layout)
+LineResolver::LineResolver(const RunResolver& runResolver)
+    : m_runResolver(runResolver)
 {
 }
 

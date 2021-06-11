@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,7 +31,6 @@
 #include "DFGPlan.h"
 #include "DFGScannable.h"
 #include "DFGThreadData.h"
-#include "JSCInlines.h"
 
 namespace JSC { namespace DFG {
 
@@ -47,7 +46,7 @@ bool Safepoint::Result::didGetCancelled()
 }
 
 Safepoint::Safepoint(Plan& plan, Result& result)
-    : m_vm(plan.vm)
+    : m_vm(plan.vm())
     , m_plan(plan)
     , m_didCallBegin(false)
     , m_result(result)
@@ -60,7 +59,7 @@ Safepoint::Safepoint(Plan& plan, Result& result)
 Safepoint::~Safepoint()
 {
     RELEASE_ASSERT(m_didCallBegin);
-    if (ThreadData* data = m_plan.threadData) {
+    if (ThreadData* data = m_plan.threadData()) {
         RELEASE_ASSERT(data->m_safepoint == this);
         data->m_rightToRun.lock();
         data->m_safepoint = nullptr;
@@ -77,7 +76,7 @@ void Safepoint::begin()
 {
     RELEASE_ASSERT(!m_didCallBegin);
     m_didCallBegin = true;
-    if (ThreadData* data = m_plan.threadData) {
+    if (ThreadData* data = m_plan.threadData()) {
         RELEASE_ASSERT(!data->m_safepoint);
         data->m_safepoint = this;
         data->m_rightToRun.unlockFairly();
@@ -113,7 +112,7 @@ void Safepoint::cancel()
     RELEASE_ASSERT(m_didCallBegin);
     RELEASE_ASSERT(!m_result.m_didGetCancelled); // We cannot get cancelled twice because subsequent GCs will think that we're alive and they will not do anything to us.
 
-    m_plan.cancel();
+    RELEASE_ASSERT(m_plan.stage() == Plan::Cancelled);
     m_result.m_didGetCancelled = true;
     m_vm = nullptr;
 }

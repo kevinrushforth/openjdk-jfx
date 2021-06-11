@@ -28,7 +28,9 @@
 
 #if ENABLE(SERVICE_WORKER)
 
+#include "Logging.h"
 #include "SWServer.h"
+#include "SWServerToContextConnection.h"
 #include "SWServerWorker.h"
 #include "ServiceWorkerTypes.h"
 #include "ServiceWorkerUpdateViaCache.h"
@@ -37,7 +39,7 @@ namespace WebCore {
 
 static ServiceWorkerRegistrationIdentifier generateServiceWorkerRegistrationIdentifier()
 {
-    return generateObjectIdentifier<ServiceWorkerRegistrationIdentifierType>();
+    return ServiceWorkerRegistrationIdentifier::generate();
 }
 
 SWServerRegistration::SWServerRegistration(SWServer& server, const ServiceWorkerRegistrationKey& key, ServiceWorkerUpdateViaCache updateViaCache, const URL& scopeURL, const URL& scriptURL)
@@ -48,6 +50,7 @@ SWServerRegistration::SWServerRegistration(SWServer& server, const ServiceWorker
     , m_scriptURL(scriptURL)
     , m_server(server)
     , m_creationTime(MonotonicTime::now())
+    , m_softUpdateTimer { *this, &SWServerRegistration::softUpdate }
 {
     m_scopeURL.removeFragmentIdentifier();
 }
@@ -94,12 +97,12 @@ void SWServerRegistration::updateRegistrationState(ServiceWorkerRegistrationStat
         break;
     };
 
-    std::optional<ServiceWorkerData> serviceWorkerData;
+    Optional<ServiceWorkerData> serviceWorkerData;
     if (worker)
         serviceWorkerData = worker->data();
 
     forEachConnection([&](auto& connection) {
-        connection.updateRegistrationStateInClient(identifier(), state, serviceWorkerData);
+        connection.updateRegistrationStateInClient(this->identifier(), state, serviceWorkerData);
     });
 }
 
@@ -114,7 +117,7 @@ void SWServerRegistration::setUpdateViaCache(ServiceWorkerUpdateViaCache updateV
 {
     m_updateViaCache = updateViaCache;
     forEachConnection([&](auto& connection) {
-        connection.setRegistrationUpdateViaCache(identifier(), updateViaCache);
+        connection.setRegistrationUpdateViaCache(this->identifier(), updateViaCache);
     });
 }
 
@@ -122,36 +125,36 @@ void SWServerRegistration::setLastUpdateTime(WallTime time)
 {
     m_lastUpdateTime = time;
     forEachConnection([&](auto& connection) {
-        connection.setRegistrationLastUpdateTime(identifier(), time);
+        connection.setRegistrationLastUpdateTime(this->identifier(), time);
     });
 }
 
 void SWServerRegistration::fireUpdateFoundEvent()
 {
     forEachConnection([&](auto& connection) {
-        connection.fireUpdateFoundEvent(identifier());
+        connection.fireUpdateFoundEvent(this->identifier());
     });
 }
 
 void SWServerRegistration::forEachConnection(const WTF::Function<void(SWServer::Connection&)>& apply)
 {
     for (auto connectionIdentifierWithClients : m_connectionsWithClientRegistrations.values()) {
-        if (auto* connection = m_server.getConnection(connectionIdentifierWithClients))
+        if (auto* connection = m_server.connection(connectionIdentifierWithClients))
             apply(*connection);
     }
 }
 
 ServiceWorkerRegistrationData SWServerRegistration::data() const
 {
-    std::optional<ServiceWorkerData> installingWorkerData;
+    Optional<ServiceWorkerData> installingWorkerData;
     if (m_installingWorker)
         installingWorkerData = m_installingWorker->data();
 
-    std::optional<ServiceWorkerData> waitingWorkerData;
+    Optional<ServiceWorkerData> waitingWorkerData;
     if (m_waitingWorker)
         waitingWorkerData = m_waitingWorker->data();
 
-    std::optional<ServiceWorkerData> activeWorkerData;
+    Optional<ServiceWorkerData> activeWorkerData;
     if (m_activeWorker)
         activeWorkerData = m_activeWorker->data();
 
@@ -198,7 +201,7 @@ void SWServerRegistration::notifyClientsOfControllerChange()
     ASSERT(activeWorker());
 
     for (auto& item : m_clientsUsingRegistration) {
-        if (auto* connection = m_server.getConnection(item.key))
+        if (auto* connection = m_server.connection(item.key))
             connection->notifyClientsOfControllerChange(item.value, activeWorker()->data());
     }
 }
@@ -259,7 +262,7 @@ void SWServerRegistration::clear()
         updateWorkerState(*activeWorker, ServiceWorkerState::Redundant);
 
     // Remove scope to registration map[scopeString].
-    m_server.removeRegistration(key());
+    m_server.removeRegistration(identifier());
 }
 
 // https://w3c.github.io/ServiceWorker/#try-activate-algorithm
@@ -307,10 +310,7 @@ void SWServerRegistration::activate()
 
     // For each service worker client who is using registration:
     // - Set client's active worker to registration's active worker.
-    for (auto keyValue : m_clientsUsingRegistration) {
-        for (auto& clientIdentifier : keyValue.value)
-            m_server.setClientActiveWorker(ServiceWorkerClientIdentifier { keyValue.key, clientIdentifier }, activeWorker()->identifier());
-    }
+
     // - Invoke Notify Controller Change algorithm with client as the argument.
     notifyClientsOfControllerChange();
 
@@ -336,9 +336,14 @@ void SWServerRegistration::handleClientUnload()
 {
     if (hasClientsUsingRegistration())
         return;
-    if (isUninstalling() && tryClear())
+    if (isUnregistered() && tryClear())
         return;
     tryActivate();
+}
+
+bool SWServerRegistration::isUnregistered() const
+{
+    return m_server.getRegistration(key()) != this;
 }
 
 void SWServerRegistration::controlClient(ServiceWorkerClientIdentifier identifier)
@@ -349,20 +354,31 @@ void SWServerRegistration::controlClient(ServiceWorkerClientIdentifier identifie
 
     HashSet<DocumentIdentifier> identifiers;
     identifiers.add(identifier.contextIdentifier);
-    m_server.getConnection(identifier.serverConnectionIdentifier)->notifyClientsOfControllerChange(identifiers, activeWorker()->data());
+    m_server.connection(identifier.serverConnectionIdentifier)->notifyClientsOfControllerChange(identifiers, activeWorker()->data());
 }
 
-void SWServerRegistration::setIsUninstalling(bool value)
+bool SWServerRegistration::shouldSoftUpdate(const FetchOptions& options) const
 {
-    if (m_uninstalling == value)
+    if (options.mode == FetchOptions::Mode::Navigate)
+        return true;
+
+    return WebCore::isNonSubresourceRequest(options.destination) && isStale();
+}
+
+void SWServerRegistration::softUpdate()
+{
+    m_server.softUpdate(*this);
+}
+
+void SWServerRegistration::scheduleSoftUpdate()
+{
+    // To avoid scheduling many updates during a single page load, we do soft updates on a 1 second delay and keep delaying
+    // as long as soft update requests keep coming. This seems to match Chrome's behavior.
+    if (m_softUpdateTimer.isActive())
         return;
 
-    m_uninstalling = value;
-
-    if (!m_uninstalling && activeWorker()) {
-        // Registration with active worker has been resurrected, we need to check if any ready promises were waiting for this.
-        m_server.resolveRegistrationReadyRequests(*this);
-    }
+    RELEASE_LOG(ServiceWorker, "SWServerRegistration::softUpdateIfNeeded");
+    m_softUpdateTimer.startOneShot(softUpdateDelay);
 }
 
 } // namespace WebCore

@@ -29,10 +29,13 @@
 
 namespace WebCore {
 
+class Touch;
+
 class EventPath {
 public:
     EventPath(Node& origin, Event&);
     explicit EventPath(const Vector<EventTarget*>&);
+    explicit EventPath(const Vector<Element*>&);
 
     bool isEmpty() const { return m_path.isEmpty(); }
     size_t size() const { return m_path.size(); }

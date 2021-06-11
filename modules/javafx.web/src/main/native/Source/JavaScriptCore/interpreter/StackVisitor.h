@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,27 +25,26 @@
 
 #pragma once
 
+#include "BytecodeIndex.h"
 #include "CalleeBits.h"
-#include "VMEntryRecord.h"
 #include "WasmIndexOrName.h"
-#include <functional>
+#include <wtf/Function.h>
 #include <wtf/Indenter.h>
 #include <wtf/text/WTFString.h>
 
 namespace JSC {
 
-struct CodeOrigin;
+struct EntryFrame;
 struct InlineCallFrame;
 
+class CallFrame;
 class CodeBlock;
-class ExecState;
+class CodeOrigin;
 class JSCell;
 class JSFunction;
 class ClonedArguments;
 class Register;
 class RegisterAtOffsetList;
-
-typedef ExecState CallFrame;
 
 class StackVisitor {
 public:
@@ -66,7 +65,7 @@ public:
         CallFrame* callerFrame() const { return m_callerFrame; }
         CalleeBits callee() const { return m_callee; }
         CodeBlock* codeBlock() const { return m_codeBlock; }
-        unsigned bytecodeOffset() const { return m_bytecodeOffset; }
+        BytecodeIndex bytecodeIndex() const { return m_bytecodeIndex; }
         InlineCallFrame* inlineCallFrame() const {
 #if ENABLE(DFG_JIT)
             return m_inlineCallFrame;
@@ -94,13 +93,15 @@ public:
         bool hasLineAndColumnInfo() const;
         JS_EXPORT_PRIVATE void computeLineAndColumn(unsigned& line, unsigned& column) const;
 
-        RegisterAtOffsetList* calleeSaveRegisters();
+#if ENABLE(ASSEMBLER)
+        Optional<RegisterAtOffsetList> calleeSaveRegistersForUnwinding();
+#endif
 
-        ClonedArguments* createArguments();
+        ClonedArguments* createArguments(VM&);
         CallFrame* callFrame() const { return m_callFrame; }
 
         void dump(PrintStream&, Indenter = Indenter()) const;
-        void dump(PrintStream&, Indenter, std::function<void(PrintStream&)> prefix) const;
+        void dump(PrintStream&, Indenter, WTF::Function<void(PrintStream&)> prefix) const;
 
     private:
         Frame() { }
@@ -120,7 +121,7 @@ public:
         CodeBlock* m_codeBlock;
         size_t m_index;
         size_t m_argumentCountIncludingThis;
-        unsigned m_bytecodeOffset;
+        BytecodeIndex m_bytecodeIndex;
         bool m_callerIsEntryFrame : 1;
         bool m_isWasmFrame : 1;
         Wasm::IndexOrName m_wasmFunctionIndexOrName;
@@ -136,10 +137,17 @@ public:
     // StackVisitor::visit() expects a Functor that implements the following method:
     //     Status operator()(StackVisitor&) const;
 
-    template <typename Functor>
-    static void visit(CallFrame* startFrame, VM* vm, const Functor& functor)
+    enum EmptyEntryFrameAction {
+        ContinueIfTopEntryFrameIsEmpty,
+        TerminateIfTopEntryFrameIsEmpty,
+    };
+
+    template <EmptyEntryFrameAction action = ContinueIfTopEntryFrameIsEmpty, typename Functor>
+    static void visit(CallFrame* startFrame, VM& vm, const Functor& functor)
     {
         StackVisitor visitor(startFrame, vm);
+        if (action == TerminateIfTopEntryFrameIsEmpty && visitor.topEntryFrameIsEmpty())
+            return;
         while (visitor->callFrame()) {
             Status status = functor(visitor);
             if (status != Continue)
@@ -152,25 +160,28 @@ public:
     ALWAYS_INLINE Frame* operator->() { return &m_frame; }
     void unwindToMachineCodeBlockFrame();
 
+    bool topEntryFrameIsEmpty() const { return m_topEntryFrameIsEmpty; }
+
 private:
-    JS_EXPORT_PRIVATE StackVisitor(CallFrame* startFrame, VM*);
+    JS_EXPORT_PRIVATE StackVisitor(CallFrame* startFrame, VM&);
 
     JS_EXPORT_PRIVATE void gotoNextFrame();
 
     void readFrame(CallFrame*);
-    void readNonInlinedFrame(CallFrame*, CodeOrigin* = 0);
+    void readNonInlinedFrame(CallFrame*, CodeOrigin* = nullptr);
 #if ENABLE(DFG_JIT)
     void readInlinedFrame(CallFrame*, CodeOrigin*);
 #endif
 
     Frame m_frame;
+    bool m_topEntryFrameIsEmpty { false };
 };
 
 class CallerFunctor {
 public:
     CallerFunctor()
         : m_hasSkippedFirstFrame(false)
-        , m_callerFrame(0)
+        , m_callerFrame(nullptr)
     {
     }
 

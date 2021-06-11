@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 1999-2000 Harri Porten (porten@kde.org)
- *  Copyright (C) 2003, 2008, 2011, 2016 Apple Inc. All rights reserved.
+ *  Copyright (C) 2003-2020 Apple Inc. All rights reserved.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,17 +21,13 @@
 #include "config.h"
 #include "BooleanPrototype.h"
 
-#include "Error.h"
-#include "ExceptionHelpers.h"
-#include "JSFunction.h"
-#include "JSString.h"
-#include "ObjectPrototype.h"
+#include "IntegrityInlines.h"
 #include "JSCInlines.h"
 
 namespace JSC {
 
-static EncodedJSValue JSC_HOST_CALL booleanProtoFuncToString(ExecState*);
-static EncodedJSValue JSC_HOST_CALL booleanProtoFuncValueOf(ExecState*);
+static EncodedJSValue JSC_HOST_CALL booleanProtoFuncToString(JSGlobalObject*, CallFrame*);
+static EncodedJSValue JSC_HOST_CALL booleanProtoFuncValueOf(JSGlobalObject*, CallFrame*);
 
 }
 
@@ -65,39 +61,43 @@ void BooleanPrototype::finishCreation(VM& vm, JSGlobalObject*)
 
 // ------------------------------ Functions ---------------------------
 
-EncodedJSValue JSC_HOST_CALL booleanProtoFuncToString(ExecState* exec)
+EncodedJSValue JSC_HOST_CALL booleanProtoFuncToString(JSGlobalObject* globalObject, CallFrame* callFrame)
 {
-    VM& vm = exec->vm();
+    VM& vm = globalObject->vm();
     auto scope = DECLARE_THROW_SCOPE(vm);
-    JSValue thisValue = exec->thisValue();
+    JSValue thisValue = callFrame->thisValue();
     if (thisValue == jsBoolean(false))
         return JSValue::encode(vm.smallStrings.falseString());
 
     if (thisValue == jsBoolean(true))
         return JSValue::encode(vm.smallStrings.trueString());
 
-    if (!thisValue.inherits(vm, BooleanObject::info()))
-        return throwVMTypeError(exec, scope);
+    auto* thisObject = jsDynamicCast<BooleanObject*>(vm, thisValue);
+    if (UNLIKELY(!thisObject))
+        return throwVMTypeError(globalObject, scope);
 
-    if (asBooleanObject(thisValue)->internalValue() == jsBoolean(false))
+    Integrity::auditStructureID(vm, thisObject->structureID());
+    if (thisObject->internalValue() == jsBoolean(false))
         return JSValue::encode(vm.smallStrings.falseString());
 
-    ASSERT(asBooleanObject(thisValue)->internalValue() == jsBoolean(true));
+    ASSERT(thisObject->internalValue() == jsBoolean(true));
     return JSValue::encode(vm.smallStrings.trueString());
 }
 
-EncodedJSValue JSC_HOST_CALL booleanProtoFuncValueOf(ExecState* exec)
+EncodedJSValue JSC_HOST_CALL booleanProtoFuncValueOf(JSGlobalObject* globalObject, CallFrame* callFrame)
 {
-    VM& vm = exec->vm();
+    VM& vm = globalObject->vm();
     auto scope = DECLARE_THROW_SCOPE(vm);
-    JSValue thisValue = exec->thisValue();
+    JSValue thisValue = callFrame->thisValue();
     if (thisValue.isBoolean())
         return JSValue::encode(thisValue);
 
-    if (!thisValue.inherits(vm, BooleanObject::info()))
-        return throwVMTypeError(exec, scope);
+    auto* thisObject = jsDynamicCast<BooleanObject*>(vm, thisValue);
+    if (UNLIKELY(!thisObject))
+        return throwVMTypeError(globalObject, scope);
 
-    return JSValue::encode(asBooleanObject(thisValue)->internalValue());
+    Integrity::auditStructureID(vm, thisObject->structureID());
+    return JSValue::encode(thisObject->internalValue());
 }
 
 } // namespace JSC

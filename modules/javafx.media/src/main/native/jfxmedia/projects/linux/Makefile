@@ -41,7 +41,7 @@ ifdef HOST_COMPILE
                   -Wextra \
                   -Wformat-security \
                   -fstack-protector \
-                  -Werror=implicit-function-declaration \
+                  -Werror=trampolines \
 		  -msse2 \
 	          -DGSTREAMER_LITE
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -32,28 +32,91 @@
 #include "DFGNode.h"
 #include "DFGNodeFlowProjection.h"
 #include "DFGPhiChildren.h"
+#include <wtf/TriState.h>
 
 namespace JSC { namespace DFG {
 
 template<typename AbstractStateType>
 class AbstractInterpreter {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     AbstractInterpreter(Graph&, AbstractStateType&);
     ~AbstractInterpreter();
 
-    AbstractValue& forNode(NodeFlowProjection node)
+    ALWAYS_INLINE AbstractValue& forNode(NodeFlowProjection node)
     {
         return m_state.forNode(node);
     }
 
-    AbstractValue& forNode(Edge edge)
+    ALWAYS_INLINE AbstractValue& forNode(Edge edge)
     {
         return forNode(edge.node());
     }
 
-    Operands<AbstractValue>& variables()
+    ALWAYS_INLINE void clearForNode(NodeFlowProjection node)
     {
-        return m_state.variables();
+        m_state.clearForNode(node);
+    }
+
+    ALWAYS_INLINE void clearForNode(Edge edge)
+    {
+        clearForNode(edge.node());
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setForNode(NodeFlowProjection node, Arguments&&... arguments)
+    {
+        m_state.setForNode(node, std::forward<Arguments>(arguments)...);
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setForNode(Edge edge, Arguments&&... arguments)
+    {
+        setForNode(edge.node(), std::forward<Arguments>(arguments)...);
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setTypeForNode(NodeFlowProjection node, Arguments&&... arguments)
+    {
+        m_state.setTypeForNode(node, std::forward<Arguments>(arguments)...);
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setTypeForNode(Edge edge, Arguments&&... arguments)
+    {
+        setTypeForNode(edge.node(), std::forward<Arguments>(arguments)...);
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setNonCellTypeForNode(NodeFlowProjection node, Arguments&&... arguments)
+    {
+        m_state.setNonCellTypeForNode(node, std::forward<Arguments>(arguments)...);
+    }
+
+    template<typename... Arguments>
+    ALWAYS_INLINE void setNonCellTypeForNode(Edge edge, Arguments&&... arguments)
+    {
+        setNonCellTypeForNode(edge.node(), std::forward<Arguments>(arguments)...);
+    }
+
+    ALWAYS_INLINE void makeBytecodeTopForNode(NodeFlowProjection node)
+    {
+        m_state.makeBytecodeTopForNode(node);
+    }
+
+    ALWAYS_INLINE void makeBytecodeTopForNode(Edge edge)
+    {
+        makeBytecodeTopForNode(edge.node());
+    }
+
+    ALWAYS_INLINE void makeHeapTopForNode(NodeFlowProjection node)
+    {
+        m_state.makeHeapTopForNode(node);
+    }
+
+    ALWAYS_INLINE void makeHeapTopForNode(Edge edge)
+    {
+        makeHeapTopForNode(edge.node());
     }
 
     bool needsTypeCheck(Node* node, SpeculatedType typesPassedThrough)
@@ -99,7 +162,10 @@ public:
 
     ALWAYS_INLINE void filterEdgeByUse(Edge& edge)
     {
-        filterByType(edge, typeFilterFor(edge.useKind()));
+        UseKind useKind = edge.useKind();
+        if (useKind == UntypedUse)
+            return;
+        filterByType(edge, typeFilterFor(useKind));
     }
 
     // Abstractly execute the effects of the given node. This changes the abstract
@@ -117,9 +183,9 @@ public:
     }
 
     template<typename T>
-    FiltrationResult filterArrayModes(T node, ArrayModes arrayModes)
+    FiltrationResult filterArrayModes(T node, ArrayModes arrayModes, SpeculatedType admittedTypes = SpecNone)
     {
-        return filterArrayModes(forNode(node), arrayModes);
+        return filterArrayModes(forNode(node), arrayModes, admittedTypes);
     }
 
     template<typename T>
@@ -141,30 +207,33 @@ public:
     }
 
     FiltrationResult filter(AbstractValue&, const RegisteredStructureSet&, SpeculatedType admittedTypes = SpecNone);
-    FiltrationResult filterArrayModes(AbstractValue&, ArrayModes);
+    FiltrationResult filterArrayModes(AbstractValue&, ArrayModes, SpeculatedType admittedTypes = SpecNone);
     FiltrationResult filter(AbstractValue&, SpeculatedType);
     FiltrationResult filterByValue(AbstractValue&, FrozenValue);
     FiltrationResult filterClassInfo(AbstractValue&, const ClassInfo*);
 
     PhiChildren* phiChildren() { return m_phiChildren.get(); }
 
+    void filterICStatus(Node*);
+
+    void clobberWorld();
+    void didFoldClobberWorld();
 private:
-    void clobberWorld(const CodeOrigin&, unsigned indexInBlock);
+
+    bool handleConstantBinaryBitwiseOp(Node*);
 
     template<typename Functor>
     void forAllValues(unsigned indexInBlock, Functor&);
 
-    void clobberStructures(unsigned indexInBlock);
-    void observeTransition(unsigned indexInBlock, RegisteredStructure from, RegisteredStructure to);
-    void observeTransitions(unsigned indexInBlock, const TransitionVector&);
-    void setDidClobber();
+    void clobberStructures();
+    void didFoldClobberStructures();
 
-    enum BooleanResult {
-        UnknownBooleanResult,
-        DefinitelyFalse,
-        DefinitelyTrue
-    };
-    BooleanResult booleanResult(Node*, AbstractValue&);
+    void observeTransition(unsigned indexInBlock, RegisteredStructure from, RegisteredStructure to);
+public:
+    void observeTransitions(unsigned indexInBlock, const TransitionVector&);
+private:
+
+    TriState booleanResult(Node*, AbstractValue&);
 
     void setBuiltInConstant(Node* node, FrozenValue value)
     {
@@ -176,19 +245,16 @@ private:
     void setConstant(Node* node, FrozenValue value)
     {
         setBuiltInConstant(node, value);
-        m_state.setFoundConstants(true);
+        m_state.setShouldTryConstantFolding(true);
     }
 
-    ALWAYS_INLINE void filterByType(Edge& edge, SpeculatedType type)
-    {
-        AbstractValue& value = forNode(edge);
-        m_state.setProofStatus(edge, value.isType(type) ? IsProved : NeedsCheck);
-        filter(value, type);
-    }
+    ALWAYS_INLINE void filterByType(Edge& edge, SpeculatedType type);
 
     void verifyEdge(Node*, Edge);
     void verifyEdges(Node*);
-    void executeDoubleUnaryOpEffects(Node*, unsigned clobberLimit, double(*equivalentFunction)(double));
+    void executeDoubleUnaryOpEffects(Node*, double(*equivalentFunction)(double));
+
+    bool handleConstantDivOp(Node*);
 
     CodeBlock* m_codeBlock;
     Graph& m_graph;

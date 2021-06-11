@@ -30,15 +30,16 @@
 
 #pragma once
 
-#include "URL.h"
+#include "CookieRequestHeaderFieldProxy.h"
+#include <wtf/URL.h>
 #include "ResourceResponse.h"
 #include "WebSocketExtensionDispatcher.h"
 #include "WebSocketExtensionProcessor.h"
+#include <wtf/WeakPtr.h>
 #include <wtf/text/WTFString.h>
 
 namespace WebCore {
 
-class Document;
 class ResourceRequest;
 
 class WebSocketHandshake {
@@ -47,7 +48,7 @@ public:
     enum Mode {
         Incomplete, Normal, Failed, Connected
     };
-    WebSocketHandshake(const URL&, const String& protocol, Document*, bool allowCookies);
+    WebSocketHandshake(const URL&, const String& protocol, const String& userAgent, const String& clientOrigin, bool allowCookies);
     ~WebSocketHandshake();
 
     const URL& url() const;
@@ -60,14 +61,12 @@ public:
 
     bool secure() const;
 
-    String clientOrigin() const;
     String clientLocation() const;
 
-    CString clientHandshakeMessage();
-    ResourceRequest clientHandshakeRequest();
+    CString clientHandshakeMessage() const;
+    ResourceRequest clientHandshakeRequest(Function<String(const URL&)>&& cookieRequestHeaderFieldValue) const;
 
     void reset();
-    void clearDocument();
 
     int readServerHandshake(const char* header, size_t len);
     Mode mode() const;
@@ -98,9 +97,10 @@ private:
     URL m_url;
     String m_clientProtocol;
     bool m_secure;
-    Document* m_document;
 
     Mode m_mode;
+    String m_userAgent;
+    String m_clientOrigin;
     bool m_allowCookies;
 
     ResourceResponse m_serverHandshakeResponse;

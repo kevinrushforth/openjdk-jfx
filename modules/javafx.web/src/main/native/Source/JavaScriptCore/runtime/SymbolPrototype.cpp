@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2020 Apple Inc. All rights reserved.
  * Copyright (C) 2015 Yusuke Suzuki <utatane.tea@gmail.com>.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,15 +27,15 @@
 #include "config.h"
 #include "SymbolPrototype.h"
 
-#include "Error.h"
+#include "IntegrityInlines.h"
 #include "JSCInlines.h"
-#include "JSString.h"
 #include "SymbolObject.h"
 
 namespace JSC {
 
-static EncodedJSValue JSC_HOST_CALL symbolProtoFuncToString(ExecState*);
-static EncodedJSValue JSC_HOST_CALL symbolProtoFuncValueOf(ExecState*);
+static EncodedJSValue JSC_HOST_CALL symbolProtoGetterDescription(JSGlobalObject*, CallFrame*);
+static EncodedJSValue JSC_HOST_CALL symbolProtoFuncToString(JSGlobalObject*, CallFrame*);
+static EncodedJSValue JSC_HOST_CALL symbolProtoFuncValueOf(JSGlobalObject*, CallFrame*);
 
 }
 
@@ -47,6 +47,7 @@ const ClassInfo SymbolPrototype::s_info = { "Symbol", &Base::s_info, &symbolProt
 
 /* Source for SymbolPrototype.lut.h
 @begin symbolPrototypeTable
+  description       symbolProtoGetterDescription    DontEnum|Accessor 0
   toString          symbolProtoFuncToString         DontEnum|Function 0
   valueOf           symbolProtoFuncValueOf          DontEnum|Function 0
 @end
@@ -60,56 +61,69 @@ SymbolPrototype::SymbolPrototype(VM& vm, Structure* structure)
 void SymbolPrototype::finishCreation(VM& vm, JSGlobalObject* globalObject)
 {
     Base::finishCreation(vm);
-    putDirectWithoutTransition(vm, vm.propertyNames->toStringTagSymbol, jsString(&vm, "Symbol"), PropertyAttribute::DontEnum | PropertyAttribute::ReadOnly);
     ASSERT(inherits(vm, info()));
 
-    JSFunction* toPrimitiveFunction = JSFunction::create(vm, globalObject, 1, ASCIILiteral("[Symbol.toPrimitive]"), symbolProtoFuncValueOf, NoIntrinsic);
+    JSFunction* toPrimitiveFunction = JSFunction::create(vm, globalObject, 1, "[Symbol.toPrimitive]"_s, symbolProtoFuncValueOf, NoIntrinsic);
     putDirectWithoutTransition(vm, vm.propertyNames->toPrimitiveSymbol, toPrimitiveFunction, PropertyAttribute::DontEnum | PropertyAttribute::ReadOnly);
+    JSC_TO_STRING_TAG_WITHOUT_TRANSITION();
 }
 
 // ------------------------------ Functions ---------------------------
 
-static const char* SymbolToStringTypeError = "Symbol.prototype.toString requires that |this| be a symbol or a symbol object";
-static const char* SymbolValueOfTypeError = "Symbol.prototype.valueOf requires that |this| be a symbol or a symbol object";
+static const ASCIILiteral SymbolDescriptionTypeError { "Symbol.prototype.description requires that |this| be a symbol or a symbol object"_s };
+static const ASCIILiteral SymbolToStringTypeError { "Symbol.prototype.toString requires that |this| be a symbol or a symbol object"_s };
+static const ASCIILiteral SymbolValueOfTypeError { "Symbol.prototype.valueOf requires that |this| be a symbol or a symbol object"_s };
 
-EncodedJSValue JSC_HOST_CALL symbolProtoFuncToString(ExecState* exec)
+inline Symbol* tryExtractSymbol(VM& vm, JSValue thisValue)
 {
-    VM& vm = exec->vm();
-    auto scope = DECLARE_THROW_SCOPE(vm);
-
-    JSValue thisValue = exec->thisValue();
-    Symbol* symbol = nullptr;
     if (thisValue.isSymbol())
-        symbol = asSymbol(thisValue);
-    else {
-        if (!thisValue.isObject())
-            return throwVMTypeError(exec, scope, SymbolToStringTypeError);
-        JSObject* thisObject = asObject(thisValue);
-        if (!thisObject->inherits(vm, SymbolObject::info()))
-            return throwVMTypeError(exec, scope, SymbolToStringTypeError);
-        symbol = asSymbol(jsCast<SymbolObject*>(thisObject)->internalValue());
-    }
-
-    return JSValue::encode(jsNontrivialString(exec, symbol->descriptiveString()));
-}
-
-EncodedJSValue JSC_HOST_CALL symbolProtoFuncValueOf(ExecState* exec)
-{
-    VM& vm = exec->vm();
-    auto scope = DECLARE_THROW_SCOPE(vm);
-
-    JSValue thisValue = exec->thisValue();
-    if (thisValue.isSymbol())
-        return JSValue::encode(thisValue);
+        return asSymbol(thisValue);
 
     if (!thisValue.isObject())
-        return throwVMTypeError(exec, scope, SymbolValueOfTypeError);
-
+        return nullptr;
     JSObject* thisObject = asObject(thisValue);
-    if (!thisObject->inherits(vm, SymbolObject::info()))
-        return throwVMTypeError(exec, scope, SymbolValueOfTypeError);
+    if (!thisObject->inherits<SymbolObject>(vm))
+        return nullptr;
+    return asSymbol(jsCast<SymbolObject*>(thisObject)->internalValue());
+}
 
-    return JSValue::encode(jsCast<SymbolObject*>(thisObject)->internalValue());
+EncodedJSValue JSC_HOST_CALL symbolProtoGetterDescription(JSGlobalObject* globalObject, CallFrame* callFrame)
+{
+    VM& vm = globalObject->vm();
+    auto scope = DECLARE_THROW_SCOPE(vm);
+
+    Symbol* symbol = tryExtractSymbol(vm, callFrame->thisValue());
+    if (!symbol)
+        return throwVMTypeError(globalObject, scope, SymbolDescriptionTypeError);
+    scope.release();
+    Integrity::auditStructureID(vm, symbol->structureID());
+    const auto description = symbol->description();
+    return JSValue::encode(description.isNull() ? jsUndefined() : jsString(vm, description));
+}
+
+EncodedJSValue JSC_HOST_CALL symbolProtoFuncToString(JSGlobalObject* globalObject, CallFrame* callFrame)
+{
+    VM& vm = globalObject->vm();
+    auto scope = DECLARE_THROW_SCOPE(vm);
+
+    Symbol* symbol = tryExtractSymbol(vm, callFrame->thisValue());
+    if (!symbol)
+        return throwVMTypeError(globalObject, scope, SymbolToStringTypeError);
+    Integrity::auditStructureID(vm, symbol->structureID());
+    RELEASE_AND_RETURN(scope, JSValue::encode(jsNontrivialString(vm, symbol->descriptiveString())));
+}
+
+EncodedJSValue JSC_HOST_CALL symbolProtoFuncValueOf(JSGlobalObject* globalObject, CallFrame* callFrame)
+{
+    VM& vm = globalObject->vm();
+    auto scope = DECLARE_THROW_SCOPE(vm);
+
+    Symbol* symbol = tryExtractSymbol(vm, callFrame->thisValue());
+    if (!symbol)
+        return throwVMTypeError(globalObject, scope, SymbolValueOfTypeError);
+
+    Integrity::auditStructureID(vm, symbol->structureID());
+    RELEASE_AND_RETURN(scope, JSValue::encode(symbol));
 }
 
 } // namespace JSC

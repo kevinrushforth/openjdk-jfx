@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# Copyright (c) 2014, 2016 Apple Inc. All rights reserved.
+# Copyright (c) 2014-2018 Apple Inc. All rights reserved.
 # Copyright (c) 2014 University of Washington. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,10 +30,16 @@ import string
 from string import Template
 from operator import methodcaller
 
-from cpp_generator import CppGenerator
-from cpp_generator_templates import CppGeneratorTemplates as CppTemplates
-from generator import Generator, ucfirst
-from models import AliasedType, ArrayType, EnumType, ObjectType
+try:
+    from .cpp_generator import CppGenerator
+    from .cpp_generator_templates import CppGeneratorTemplates as CppTemplates
+    from .generator import Generator, ucfirst
+    from .models import AliasedType, ArrayType, EnumType, ObjectType
+except ValueError:
+    from cpp_generator import CppGenerator
+    from cpp_generator_templates import CppGeneratorTemplates as CppTemplates
+    from generator import Generator, ucfirst
+    from models import AliasedType, ArrayType, EnumType, ObjectType
 
 log = logging.getLogger('global')
 
@@ -65,8 +71,8 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
         sections.append('namespace Protocol {')
         sections.extend(self._generate_enum_mapping_and_conversion_methods(domains))
         sections.append(self._generate_open_field_names())
-        builder_sections = map(self._generate_builders_for_domain, domains)
-        sections.extend(filter(lambda section: len(section) > 0, builder_sections))
+        builder_sections = list(map(self._generate_builders_for_domain, domains))
+        sections.extend([section for section in builder_sections if len(section) > 0])
         sections.append('} // namespace Protocol')
         sections.append(Template(CppTemplates.ImplementationPostlude).substitute(None, **header_args))
 
@@ -105,7 +111,7 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
             body_lines = []
             body_lines.extend([
                 'template<>',
-                'std::optional<%s> parseEnumValueFromString<%s>(const String& protocolString)' % (cpp_protocol_type, cpp_protocol_type),
+                'Optional<%s> parseEnumValueFromString<%s>(const String& protocolString)' % (cpp_protocol_type, cpp_protocol_type),
                 '{',
                 '    static const size_t constantValues[] = {',
             ])
@@ -120,16 +126,15 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
                 '        if (protocolString == enum_constant_values[constantValues[i]])',
                 '            return (%s)constantValues[i];' % cpp_protocol_type,
                 '',
-                '    return std::nullopt;',
+                '    return WTF::nullopt;',
                 '}',
-                '',
             ])
-            return body_lines
+            return '\n'.join(body_lines)
 
         type_declarations = self.type_declarations_for_domain(domain)
         declaration_types = [decl.type for decl in type_declarations]
-        object_types = filter(lambda _type: isinstance(_type, ObjectType), declaration_types)
-        enum_types = filter(lambda _type: isinstance(_type, EnumType), declaration_types)
+        object_types = [_type for _type in declaration_types if isinstance(_type, ObjectType)]
+        enum_types = [_type for _type in declaration_types if isinstance(_type, EnumType)]
         if len(object_types) + len(enum_types) == 0:
             return ''
 
@@ -140,24 +145,30 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
         lines.append("// Enums in the '%s' Domain" % domain.domain_name)
         for enum_type in enum_types:
             cpp_protocol_type = CppGenerator.cpp_protocol_type_for_type(enum_type)
-            lines.extend(generate_conversion_method_body(enum_type, cpp_protocol_type))
+            lines.append('')
+            lines.append(self.wrap_with_guard_for_condition(enum_type.declaration().condition, generate_conversion_method_body(enum_type, cpp_protocol_type)))
 
         for object_type in object_types:
+            object_lines = []
             for enum_member in filter(type_member_is_anonymous_enum_type, object_type.members):
                 cpp_protocol_type = CppGenerator.cpp_protocol_type_for_type_member(enum_member, object_type.declaration())
-                lines.extend(generate_conversion_method_body(enum_member.type, cpp_protocol_type))
+                object_lines.append(generate_conversion_method_body(enum_member.type, cpp_protocol_type))
+            if len(object_lines):
+                if len(lines):
+                    lines.append('')
+                lines.append(self.wrap_with_guard_for_condition(object_type.declaration().condition, '\n'.join(object_lines)))
 
         if len(lines) == 1:
             return ''  # No real declarations to emit, just the domain comment.
 
-        return self.wrap_with_guard_for_domain(domain, '\n'.join(lines))
+        return self.wrap_with_guard_for_condition(domain.condition, '\n'.join(lines))
 
     def _generate_enum_mapping_and_conversion_methods(self, domains):
         sections = []
         sections.append('namespace %s {' % self.helpers_namespace())
         sections.extend(self._generate_enum_mapping())
-        enum_parser_sections = map(self._generate_enum_conversion_methods_for_domain, domains)
-        sections.extend(filter(lambda section: len(section) > 0, enum_parser_sections))
+        enum_parser_sections = list(map(self._generate_enum_conversion_methods_for_domain, domains))
+        sections.extend([section for section in enum_parser_sections if len(section) > 0])
         if len(sections) == 1:
             return []  # No declarations to emit, just the namespace.
 
@@ -167,31 +178,40 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
     def _generate_open_field_names(self):
         lines = []
         for domain in self.domains_to_generate():
+            domain_lines = []
             type_declarations = self.type_declarations_for_domain(domain)
-            for type_declaration in filter(lambda decl: Generator.type_has_open_fields(decl.type), type_declarations):
+            for type_declaration in [decl for decl in type_declarations if Generator.type_has_open_fields(decl.type)]:
                 open_members = Generator.open_fields(type_declaration)
                 for type_member in sorted(open_members, key=lambda member: member.member_name):
                     field_name = '::'.join(['Inspector', 'Protocol', domain.domain_name, ucfirst(type_declaration.type_name), ucfirst(type_member.member_name)])
-                    lines.append('const char* %s = "%s";' % (field_name, type_member.member_name))
+                    domain_lines.append('const char* %s = "%s";' % (field_name, type_member.member_name))
+            if len(domain_lines):
+                lines.append(self.wrap_with_guard_for_condition(domain.condition, '\n'.join(domain_lines)))
 
         return '\n'.join(lines)
 
     def _generate_builders_for_domain(self, domain):
         sections = []
         type_declarations = self.type_declarations_for_domain(domain)
-        declarations_to_generate = filter(lambda decl: self.type_needs_shape_assertions(decl.type), type_declarations)
+        declarations_to_generate = [decl for decl in type_declarations if self.type_needs_shape_assertions(decl.type)]
 
         for type_declaration in declarations_to_generate:
+            type_lines = []
             for type_member in type_declaration.type_members:
                 if isinstance(type_member.type, EnumType):
-                    sections.append(self._generate_assertion_for_enum(type_member, type_declaration))
+                    type_lines.append(self._generate_assertion_for_enum(type_member, type_declaration))
 
             if isinstance(type_declaration.type, ObjectType):
-                sections.append(self._generate_assertion_for_object_declaration(type_declaration))
+                type_lines.append(self._generate_assertion_for_object_declaration(type_declaration))
                 if Generator.type_needs_runtime_casts(type_declaration.type):
-                    sections.append(self._generate_runtime_cast_for_object_declaration(type_declaration))
+                    type_lines.append(self._generate_runtime_cast_for_object_declaration(type_declaration))
+            if len(type_lines):
+                sections.append(self.wrap_with_guard_for_condition(type_declaration.condition, '\n\n'.join(type_lines)))
 
-        return '\n\n'.join(sections)
+        if not len(sections):
+            return ''
+
+        return self.wrap_with_guard_for_condition(domain.condition, '\n\n'.join(sections))
 
     def _generate_runtime_cast_for_object_declaration(self, object_declaration):
         args = {
@@ -200,14 +220,14 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
         return Template(CppTemplates.ProtocolObjectRuntimeCast).substitute(None, **args)
 
     def _generate_assertion_for_object_declaration(self, object_declaration):
-        required_members = filter(lambda member: not member.is_optional, object_declaration.type_members)
-        optional_members = filter(lambda member: member.is_optional, object_declaration.type_members)
+        required_members = [member for member in object_declaration.type_members if not member.is_optional]
+        optional_members = [member for member in object_declaration.type_members if member.is_optional]
         should_count_properties = not Generator.type_has_open_fields(object_declaration.type)
         lines = []
 
-        lines.append('#if !ASSERT_DISABLED')
         lines.append('void BindingTraits<%s>::assertValueHasExpectedType(JSON::Value* value)' % (CppGenerator.cpp_protocol_type_for_type(object_declaration.type)))
         lines.append("""{
+#if ASSERT_ENABLED
     ASSERT_ARG(value, value);
     RefPtr<JSON::Object> object;
     bool castSucceeded = value->asObject(object);
@@ -219,7 +239,7 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
             }
 
             lines.append("""    {
-        JSON::Object::iterator %(memberName)sPos = object->find(ASCIILiteral("%(memberName)s"));
+        auto %(memberName)sPos = object->find("%(memberName)s"_s);
         ASSERT(%(memberName)sPos != object->end());
         %(assertMethod)s(%(memberName)sPos->value.get());
     }""" % args)
@@ -235,7 +255,7 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
             }
 
             lines.append("""    {
-        JSON::Object::iterator %(memberName)sPos = object->find(ASCIILiteral("%(memberName)s"));
+        auto %(memberName)sPos = object->find("%(memberName)s"_s);
         if (%(memberName)sPos != object->end()) {
             %(assertMethod)s(%(memberName)sPos->value.get());""" % args)
 
@@ -247,15 +267,17 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
         if should_count_properties:
             lines.append('    if (foundPropertiesCount != object->size())')
             lines.append('        FATAL("Unexpected properties in object: %s\\n", object->toJSONString().ascii().data());')
+        lines.append('#else // ASSERT_ENABLED')
+        lines.append('    UNUSED_PARAM(value);')
+        lines.append('#endif // ASSERT_ENABLED')
         lines.append('}')
-        lines.append('#endif // !ASSERT_DISABLED')
         return '\n'.join(lines)
 
     def _generate_assertion_for_enum(self, enum_member, object_declaration):
         lines = []
-        lines.append('#if !ASSERT_DISABLED')
         lines.append('void %s(JSON::Value* value)' % CppGenerator.cpp_assertion_method_for_type_member(enum_member, object_declaration))
         lines.append('{')
+        lines.append('#if ASSERT_ENABLED')
         lines.append('    ASSERT_ARG(value, value);')
         lines.append('    String result;')
         lines.append('    bool castSucceeded = value->asString(result);')
@@ -263,7 +285,9 @@ class CppProtocolTypesImplementationGenerator(CppGenerator):
 
         assert_condition = ' || '.join(['result == "%s"' % enum_value for enum_value in enum_member.type.enum_values()])
         lines.append('    ASSERT(%s);' % assert_condition)
+        lines.append('#else // ASSERT_ENABLED')
+        lines.append('    UNUSED_PARAM(value);')
+        lines.append('#endif // ASSERT_ENABLED')
         lines.append('}')
-        lines.append('#endif // !ASSERT_DISABLED')
 
         return '\n'.join(lines)

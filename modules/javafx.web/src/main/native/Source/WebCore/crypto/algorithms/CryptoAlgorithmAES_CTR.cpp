@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2020 Sony Interactive Entertainment Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,11 +27,13 @@
 #include "config.h"
 #include "CryptoAlgorithmAES_CTR.h"
 
-#if ENABLE(SUBTLE_CRYPTO)
+#if ENABLE(WEB_CRYPTO)
 
 #include "CryptoAlgorithmAesCtrParams.h"
 #include "CryptoAlgorithmAesKeyParams.h"
 #include "CryptoKeyAES.h"
+#include <wtf/CrossThreadCopier.h>
+#include <wtf/FlipBytes.h>
 
 namespace WebCore {
 
@@ -39,6 +42,7 @@ static const char* const ALG128 = "A128CTR";
 static const char* const ALG192 = "A192CTR";
 static const char* const ALG256 = "A256CTR";
 static const size_t CounterSize = 16;
+static const uint64_t AllBitsSet = ~(uint64_t)0;
 }
 
 static inline bool usagesAreInvalidForCryptoAlgorithmAES_CTR(CryptoKeyUsageBitmap usages)
@@ -46,7 +50,7 @@ static inline bool usagesAreInvalidForCryptoAlgorithmAES_CTR(CryptoKeyUsageBitma
     return usages & (CryptoKeyUsageSign | CryptoKeyUsageVerify | CryptoKeyUsageDeriveKey | CryptoKeyUsageDeriveBits);
 }
 
-static bool parametersAreValid(CryptoAlgorithmAesCtrParams& parameters)
+static bool parametersAreValid(const CryptoAlgorithmAesCtrParams& parameters)
 {
     using namespace CryptoAlgorithmAES_CTRInternal;
     if (parameters.counterVector().size() != CounterSize)
@@ -66,33 +70,31 @@ CryptoAlgorithmIdentifier CryptoAlgorithmAES_CTR::identifier() const
     return s_identifier;
 }
 
-void CryptoAlgorithmAES_CTR::encrypt(std::unique_ptr<CryptoAlgorithmParameters>&& parameters, Ref<CryptoKey>&& key, Vector<uint8_t>&& plainText, VectorCallback&& callback, ExceptionCallback&& exceptionCallback, ScriptExecutionContext& context, WorkQueue& workQueue)
+void CryptoAlgorithmAES_CTR::encrypt(const CryptoAlgorithmParameters& parameters, Ref<CryptoKey>&& key, Vector<uint8_t>&& plainText, VectorCallback&& callback, ExceptionCallback&& exceptionCallback, ScriptExecutionContext& context, WorkQueue& workQueue)
 {
-    ASSERT(parameters);
-    auto& aesParameters = downcast<CryptoAlgorithmAesCtrParams>(*parameters);
+    auto& aesParameters = downcast<CryptoAlgorithmAesCtrParams>(parameters);
     if (!parametersAreValid(aesParameters)) {
         exceptionCallback(OperationError);
         return;
     }
 
-    dispatchOperation(workQueue, context, WTFMove(callback), WTFMove(exceptionCallback),
-        [parameters = WTFMove(parameters), key = WTFMove(key), plainText = WTFMove(plainText)] {
-            return platformEncrypt(downcast<CryptoAlgorithmAesCtrParams>(*parameters), downcast<CryptoKeyAES>(key.get()), plainText);
+    dispatchOperationInWorkQueue(workQueue, context, WTFMove(callback), WTFMove(exceptionCallback),
+        [parameters = crossThreadCopy(aesParameters), key = WTFMove(key), plainText = WTFMove(plainText)] {
+            return platformEncrypt(parameters, downcast<CryptoKeyAES>(key.get()), plainText);
         });
 }
 
-void CryptoAlgorithmAES_CTR::decrypt(std::unique_ptr<CryptoAlgorithmParameters>&& parameters, Ref<CryptoKey>&& key, Vector<uint8_t>&& cipherText, VectorCallback&& callback, ExceptionCallback&& exceptionCallback, ScriptExecutionContext& context, WorkQueue& workQueue)
+void CryptoAlgorithmAES_CTR::decrypt(const CryptoAlgorithmParameters& parameters, Ref<CryptoKey>&& key, Vector<uint8_t>&& cipherText, VectorCallback&& callback, ExceptionCallback&& exceptionCallback, ScriptExecutionContext& context, WorkQueue& workQueue)
 {
-    ASSERT(parameters);
-    auto& aesParameters = downcast<CryptoAlgorithmAesCtrParams>(*parameters);
+    auto& aesParameters = downcast<CryptoAlgorithmAesCtrParams>(parameters);
     if (!parametersAreValid(aesParameters)) {
         exceptionCallback(OperationError);
         return;
     }
 
-    dispatchOperation(workQueue, context, WTFMove(callback), WTFMove(exceptionCallback),
-        [parameters = WTFMove(parameters), key = WTFMove(key), cipherText = WTFMove(cipherText)] {
-            return platformDecrypt(downcast<CryptoAlgorithmAesCtrParams>(*parameters), downcast<CryptoKeyAES>(key.get()), cipherText);
+    dispatchOperationInWorkQueue(workQueue, context, WTFMove(callback), WTFMove(exceptionCallback),
+        [parameters = crossThreadCopy(aesParameters), key = WTFMove(key), cipherText = WTFMove(cipherText)] {
+            return platformDecrypt(parameters, downcast<CryptoKeyAES>(key.get()), cipherText);
         });
 }
 
@@ -114,10 +116,10 @@ void CryptoAlgorithmAES_CTR::generateKey(const CryptoAlgorithmParameters& parame
     callback(WTFMove(result));
 }
 
-void CryptoAlgorithmAES_CTR::importKey(CryptoKeyFormat format, KeyData&& data, const std::unique_ptr<CryptoAlgorithmParameters>&& parameters, bool extractable, CryptoKeyUsageBitmap usages, KeyCallback&& callback, ExceptionCallback&& exceptionCallback)
+void CryptoAlgorithmAES_CTR::importKey(CryptoKeyFormat format, KeyData&& data, const CryptoAlgorithmParameters& parameters, bool extractable, CryptoKeyUsageBitmap usages, KeyCallback&& callback, ExceptionCallback&& exceptionCallback)
 {
     using namespace CryptoAlgorithmAES_CTRInternal;
-    ASSERT(parameters);
+
     if (usagesAreInvalidForCryptoAlgorithmAES_CTR(usages)) {
         exceptionCallback(SyntaxError);
         return;
@@ -126,7 +128,7 @@ void CryptoAlgorithmAES_CTR::importKey(CryptoKeyFormat format, KeyData&& data, c
     RefPtr<CryptoKeyAES> result;
     switch (format) {
     case CryptoKeyFormat::Raw:
-        result = CryptoKeyAES::importRaw(parameters->identifier, WTFMove(WTF::get<Vector<uint8_t>>(data)), extractable, usages);
+        result = CryptoKeyAES::importRaw(parameters.identifier, WTFMove(WTF::get<Vector<uint8_t>>(data)), extractable, usages);
         break;
     case CryptoKeyFormat::Jwk: {
         auto checkAlgCallback = [](size_t length, const String& alg) -> bool {
@@ -140,7 +142,7 @@ void CryptoAlgorithmAES_CTR::importKey(CryptoKeyFormat format, KeyData&& data, c
             }
             return false;
         };
-        result = CryptoKeyAES::importJwk(parameters->identifier, WTFMove(WTF::get<JsonWebKey>(data)), extractable, usages, WTFMove(checkAlgCallback));
+        result = CryptoKeyAES::importJwk(parameters.identifier, WTFMove(WTF::get<JsonWebKey>(data)), extractable, usages, WTFMove(checkAlgCallback));
         break;
     }
     default:
@@ -201,6 +203,118 @@ ExceptionOr<size_t> CryptoAlgorithmAES_CTR::getKeyLength(const CryptoAlgorithmPa
     return CryptoKeyAES::getKeyLength(parameters);
 }
 
+CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockHelper(const Vector<uint8_t>& counterVector, size_t counterLength)
+    : m_counterLength(counterLength)
+{
+    using namespace CryptoAlgorithmAES_CTRInternal;
+
+    ASSERT(counterVector.size() == CounterSize);
+    ASSERT(counterLength <= CounterSize * 8);
+    bool littleEndian = false; // counterVector is stored in big-endian.
+    memcpy(&m_bits.m_hi, counterVector.data(), 8);
+    m_bits.m_hi = flipBytesIfLittleEndian(m_bits.m_hi, littleEndian);
+    memcpy(&m_bits.m_lo, counterVector.data() + 8, 8);
+    m_bits.m_lo = flipBytesIfLittleEndian(m_bits.m_lo, littleEndian);
 }
 
-#endif // ENABLE(SUBTLE_CRYPTO)
+size_t CryptoAlgorithmAES_CTR::CounterBlockHelper::countToOverflowSaturating() const
+{
+    CounterBlockBits counterMask;
+    counterMask.set();
+    counterMask <<= m_counterLength;
+    counterMask = ~counterMask;
+
+    auto countMinusOne = ~m_bits & counterMask;
+
+    CounterBlockBits sizeTypeMask;
+    sizeTypeMask.set();
+    sizeTypeMask <<= sizeof(size_t) * 8;
+    if ((sizeTypeMask & countMinusOne).any()) {
+        // Saturating to the size_t max since the count is greater than that.
+        return std::numeric_limits<size_t>::max();
+    }
+
+    countMinusOne &= ~sizeTypeMask;
+    if (countMinusOne.all()) {
+        // As all bits are set, adding one would result in an overflow.
+        // Return size_t max instead.
+        return std::numeric_limits<size_t>::max();
+    }
+
+    static_assert(sizeof(size_t) <= sizeof(uint64_t));
+    return countMinusOne.m_lo + 1;
+}
+
+Vector<uint8_t> CryptoAlgorithmAES_CTR::CounterBlockHelper::counterVectorAfterOverflow() const
+{
+    using namespace CryptoAlgorithmAES_CTRInternal;
+
+    CounterBlockBits nonceMask;
+    nonceMask.set();
+    nonceMask <<= m_counterLength;
+    auto bits = m_bits & nonceMask;
+
+    bool littleEndian = false; // counterVector is stored in big-endian.
+    Vector<uint8_t> counterVector(CounterSize);
+    uint64_t hi = flipBytesIfLittleEndian(bits.m_hi, littleEndian);
+    memcpy(counterVector.data(), &hi, 8);
+    uint64_t lo = flipBytesIfLittleEndian(bits.m_lo, littleEndian);
+    memcpy(counterVector.data() + 8, &lo, 8);
+
+    return counterVector;
+}
+
+void CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::set()
+{
+    using namespace CryptoAlgorithmAES_CTRInternal;
+    m_hi = AllBitsSet;
+    m_lo = AllBitsSet;
+}
+
+bool CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::all() const
+{
+    using namespace CryptoAlgorithmAES_CTRInternal;
+    return m_hi == AllBitsSet && m_lo == AllBitsSet;
+}
+
+bool CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::any() const
+{
+    return m_hi || m_lo;
+}
+
+auto CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::operator&(const CounterBlockBits& rhs) const -> CounterBlockBits
+{
+    return { m_hi & rhs.m_hi, m_lo & rhs.m_lo };
+}
+
+auto CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::operator~() const -> CounterBlockBits
+{
+    return { ~m_hi, ~m_lo };
+}
+
+auto CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::operator <<=(unsigned shift) -> CounterBlockBits&
+{
+    if (shift < 64) {
+        m_hi = (m_hi << shift) | m_lo >> (64 - shift);
+        m_lo <<= shift;
+    } else if (shift < 128) {
+        shift -= 64;
+        m_hi = m_lo << shift;
+        m_lo = 0;
+    } else {
+        m_hi = 0;
+        m_lo = 0;
+    }
+    return *this;
+}
+
+auto CryptoAlgorithmAES_CTR::CounterBlockHelper::CounterBlockBits::operator &=(const CounterBlockBits& rhs) -> CounterBlockBits&
+{
+    m_hi &= rhs.m_hi;
+    m_lo &= rhs.m_lo;
+    return *this;
+}
+
+}
+
+#endif // ENABLE(WEB_CRYPTO)

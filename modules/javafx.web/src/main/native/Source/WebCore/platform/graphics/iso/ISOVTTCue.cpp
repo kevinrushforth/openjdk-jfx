@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,25 +27,19 @@
 #include "ISOVTTCue.h"
 
 #include "Logging.h"
-#include <JavaScriptCore/ArrayBuffer.h>
 #include <JavaScriptCore/DataView.h>
-#include <JavaScriptCore/Int8Array.h>
-#include <JavaScriptCore/JSCInlines.h>
-#include <JavaScriptCore/TypedArrayInlines.h>
 #include <wtf/JSONValues.h>
-#include <wtf/NeverDestroyed.h>
-#include <wtf/text/CString.h>
-#include <wtf/text/StringBuilder.h>
+#include <wtf/URL.h>
 
 using JSC::DataView;
 
 namespace WebCore {
 
-class ISOStringBox : public ISOBox {
+class ISOStringBox final : public ISOBox {
 public:
     const String& contents() { return m_contents; }
 
-protected:
+private:
     bool parse(JSC::DataView& view, unsigned& offset) override
     {
         unsigned localOffset = offset;
@@ -59,7 +53,7 @@ protected:
         }
 
         Vector<LChar> characters;
-        characters.reserveInitialCapacity((size_t)characterCount);
+        characters.reserveInitialCapacity(static_cast<size_t>(characterCount));
         while (characterCount--) {
             int8_t character = 0;
             if (!checkedRead<int8_t>(character, view, localOffset, BigEndian))
@@ -83,6 +77,17 @@ static FourCC vttCueSourceIDBoxType() { return "vsid"; }
 ISOWebVTTCue::ISOWebVTTCue(const MediaTime& presentationTime, const MediaTime& duration)
     : m_presentationTime(presentationTime)
     , m_duration(duration)
+{
+}
+
+ISOWebVTTCue::ISOWebVTTCue(MediaTime&& presentationTime, MediaTime&& duration, String&& sourceID, String&& id, String&& originalStartTime, String&& settings, String&& cueText)
+    : m_presentationTime(WTFMove(presentationTime))
+    , m_duration(WTFMove(duration))
+    , m_sourceID(WTFMove(sourceID))
+    , m_identifier(WTFMove(id))
+    , m_originalStartTime(WTFMove(originalStartTime))
+    , m_settings(WTFMove(settings))
+    , m_cueText(WTFMove(cueText))
 {
 }
 
@@ -114,15 +119,17 @@ String ISOWebVTTCue::toJSONString() const
 {
     auto object = JSON::Object::create();
 
-    object->setString(ASCIILiteral("sourceId"), m_sourceID);
-    object->setString(ASCIILiteral("id"), m_identifier);
+#if !LOG_DISABLED
+    object->setString("text"_s, m_cueText);
+#endif
+    object->setString("sourceId"_s, encodeWithURLEscapeSequences(m_sourceID));
+    object->setString("id"_s, encodeWithURLEscapeSequences(m_identifier));
 
-    object->setString(ASCIILiteral("originalStartTime"), m_originalStartTime);
-    object->setString(ASCIILiteral("settings"), m_settings);
-    object->setString(ASCIILiteral("cueText"), m_cueText);
+    object->setString("originalStartTime"_s, encodeWithURLEscapeSequences(m_originalStartTime));
+    object->setString("settings"_s, encodeWithURLEscapeSequences(m_settings));
 
-    object->setDouble(ASCIILiteral("presentationTime"), m_presentationTime.toDouble());
-    object->setDouble(ASCIILiteral("duration"), m_duration.toDouble());
+    object->setDouble("presentationTime"_s, m_presentationTime.toDouble());
+    object->setDouble("duration"_s, m_duration.toDouble());
 
     return object->toJSONString();
 }

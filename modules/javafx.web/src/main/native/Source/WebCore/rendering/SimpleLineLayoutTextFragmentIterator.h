@@ -100,29 +100,31 @@ public:
 
     // FIXME: These functions below should be decoupled from the text iterator.
     float textWidth(unsigned startPosition, unsigned endPosition, float xPosition) const;
-    std::optional<unsigned> lastHyphenPosition(const TextFragmentIterator::TextFragment& run, unsigned beforeIndex) const;
+    Optional<unsigned> lastHyphenPosition(const TextFragmentIterator::TextFragment& run, unsigned beforeIndex) const;
 
     struct Style {
-        explicit Style(const RenderStyle&, bool useSimplifiedTextMeasuring);
+        explicit Style(const RenderStyle&);
 
         const FontCascade& font;
-        ETextAlign textAlign;
+        TextAlignMode textAlign;
         bool hasKerningOrLigatures;
         bool collapseWhitespace;
         bool preserveNewline;
         bool wrapLines;
+        bool breakSpaces;
         bool breakAnyWordOnOverflow;
+        bool breakWordOnOverflow;
         bool breakFirstWordOnOverflow;
         bool breakNBSP;
         bool keepAllWordsForCJK;
         float wordSpacing;
-        unsigned tabWidth;
+        TabSize tabWidth;
         bool shouldHyphenate;
         float hyphenStringWidth;
         unsigned hyphenLimitBefore;
         unsigned hyphenLimitAfter;
-        AtomicString locale;
-        std::optional<unsigned> hyphenLimitLines;
+        AtomString locale;
+        Optional<unsigned> hyphenLimitLines;
     };
     const Style& style() const { return m_style; }
 

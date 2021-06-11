@@ -27,21 +27,15 @@
 #include "JSMap.h"
 
 #include "JSCInlines.h"
-#include "MapPrototype.h"
 
 namespace JSC {
 
 const ClassInfo JSMap::s_info = { "Map", &Base::s_info, nullptr, nullptr, CREATE_METHOD_TABLE(JSMap) };
 
-String JSMap::toStringName(const JSObject*, ExecState*)
-{
-    return ASCIILiteral("Object");
-}
-
-JSMap* JSMap::clone(ExecState* exec, VM& vm, Structure* structure)
+JSMap* JSMap::clone(JSGlobalObject* globalObject, VM& vm, Structure* structure)
 {
     JSMap* instance = new (NotNull, allocateCell<JSMap>(vm.heap)) JSMap(vm, structure);
-    instance->finishCreation(exec, vm, this);
+    instance->finishCreation(globalObject, vm, this);
     return instance;
 }
 
@@ -51,12 +45,12 @@ bool JSMap::isIteratorProtocolFastAndNonObservable()
     if (!globalObject->isMapPrototypeIteratorProtocolFastAndNonObservable())
         return false;
 
-    Structure* structure = this->structure();
+    VM& vm = globalObject->vm();
+    Structure* structure = this->structure(vm);
     // This is the fast case. Many maps will be an original map.
     if (structure == globalObject->mapStructure())
         return true;
 
-    VM& vm = globalObject->vm();
     if (getPrototypeDirect(vm) != globalObject->mapPrototype())
         return false;
 

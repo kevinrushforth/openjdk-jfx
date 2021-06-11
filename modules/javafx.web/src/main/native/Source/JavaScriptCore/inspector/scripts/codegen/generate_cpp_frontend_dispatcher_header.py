@@ -30,10 +30,16 @@ import re
 import string
 from string import Template
 
-from cpp_generator import CppGenerator
-from cpp_generator_templates import CppGeneratorTemplates as CppTemplates
-from generator import Generator, ucfirst
-from models import EnumType
+try:
+    from .cpp_generator import CppGenerator
+    from .cpp_generator_templates import CppGeneratorTemplates as CppTemplates
+    from .generator import Generator, ucfirst
+    from .models import EnumType
+except ValueError:
+    from cpp_generator import CppGenerator
+    from cpp_generator_templates import CppGeneratorTemplates as CppTemplates
+    from generator import Generator, ucfirst
+    from models import EnumType
 
 log = logging.getLogger('global')
 
@@ -46,7 +52,7 @@ class CppFrontendDispatcherHeaderGenerator(CppGenerator):
         return "%sFrontendDispatchers.h" % self.protocol_name()
 
     def domains_to_generate(self):
-        return filter(lambda domain: len(self.events_for_domain(domain)) > 0, Generator.domains_to_generate(self))
+        return [domain for domain in Generator.domains_to_generate(self) if len(self.events_for_domain(domain)) > 0]
 
     def generate_output(self):
         header_args = {
@@ -57,7 +63,7 @@ class CppFrontendDispatcherHeaderGenerator(CppGenerator):
         sections = []
         sections.append(self.generate_license())
         sections.append(Template(CppTemplates.HeaderPrelude).substitute(None, **header_args))
-        sections.extend(map(self._generate_dispatcher_declarations_for_domain, self.domains_to_generate()))
+        sections.extend(list(map(self._generate_dispatcher_declarations_for_domain, self.domains_to_generate())))
         sections.append(Template(CppTemplates.HeaderPostlude).substitute(None, **header_args))
         return "\n\n".join(sections)
 
@@ -105,7 +111,7 @@ class CppFrontendDispatcherHeaderGenerator(CppGenerator):
             'eventDeclarations': "\n".join(event_declarations)
         }
 
-        return self.wrap_with_guard_for_domain(domain, Template(CppTemplates.FrontendDispatcherDomainDispatcherDeclaration).substitute(None, **handler_args))
+        return self.wrap_with_guard_for_condition(domain.condition, Template(CppTemplates.FrontendDispatcherDomainDispatcherDeclaration).substitute(None, **handler_args))
 
     def _generate_dispatcher_declaration_for_event(self, event, domain, used_enum_names):
         formal_parameters = []
@@ -117,4 +123,4 @@ class CppFrontendDispatcherHeaderGenerator(CppGenerator):
                 used_enum_names.add(parameter.parameter_name)
 
         lines.append("    void %s(%s);" % (event.event_name, ", ".join(formal_parameters)))
-        return "\n".join(lines)
+        return self.wrap_with_guard_for_condition(event.condition, "\n".join(lines))

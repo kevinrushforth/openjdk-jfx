@@ -43,6 +43,8 @@ PaintingEngineBasic::~PaintingEngineBasic() = default;
 
 bool PaintingEngineBasic::paint(GraphicsLayer& layer, Ref<Buffer>&& buffer, const IntRect& sourceRect, const IntRect& mappedSourceRect, const IntRect& targetRect, float contentsScale)
 {
+    buffer->beginPainting();
+
     bool supportsAlpha = buffer->supportsAlpha();
     PaintingContext::paint(buffer,
         [&layer, sourceRect, mappedSourceRect, targetRect, contentsScale, supportsAlpha]
@@ -53,9 +55,9 @@ bool PaintingEngineBasic::paint(GraphicsLayer& layer, Ref<Buffer>&& buffer, cons
             context.translate(targetRect.x(), targetRect.y());
 
             if (supportsAlpha) {
-                context.setCompositeOperation(CompositeCopy);
-                context.fillRect(IntRect(IntPoint::zero(), sourceRect.size()), Color::transparent);
-                context.setCompositeOperation(CompositeSourceOver);
+                context.setCompositeOperation(CompositeOperator::Copy);
+                context.fillRect(IntRect(IntPoint::zero(), sourceRect.size()), Color::transparentBlack);
+                context.setCompositeOperation(CompositeOperator::SourceOver);
             }
 
             context.translate(-sourceRect.x(), -sourceRect.y());
@@ -65,6 +67,9 @@ bool PaintingEngineBasic::paint(GraphicsLayer& layer, Ref<Buffer>&& buffer, cons
 
             context.restore();
         });
+
+    buffer->completePainting();
+
     return true;
 }
 

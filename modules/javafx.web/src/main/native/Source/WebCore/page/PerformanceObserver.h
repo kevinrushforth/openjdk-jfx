@@ -41,13 +41,17 @@ class ScriptExecutionContext;
 class PerformanceObserver : public RefCounted<PerformanceObserver> {
 public:
     struct Init {
-        Vector<String> entryTypes;
+        Optional<Vector<String>> entryTypes;
+        Optional<String> type;
+        bool buffered;
     };
 
     static Ref<PerformanceObserver> create(ScriptExecutionContext& context, Ref<PerformanceObserverCallback>&& callback)
     {
         return adoptRef(*new PerformanceObserver(context, WTFMove(callback)));
     }
+
+    static Vector<String> supportedEntryTypes(ScriptExecutionContext&);
 
     void disassociate();
 
@@ -59,6 +63,9 @@ public:
     void queueEntry(PerformanceEntry&);
     void deliver();
 
+    bool isRegistered() const { return m_registered; }
+    PerformanceObserverCallback& callback() { return m_callback.get(); }
+
 private:
     PerformanceObserver(ScriptExecutionContext&, Ref<PerformanceObserverCallback>&&);
 
@@ -67,6 +74,7 @@ private:
     Ref<PerformanceObserverCallback> m_callback;
     OptionSet<PerformanceEntry::Type> m_typeFilter;
     bool m_registered { false };
+    bool m_isTypeObserver { false };
 };
 
 } // namespace WebCore

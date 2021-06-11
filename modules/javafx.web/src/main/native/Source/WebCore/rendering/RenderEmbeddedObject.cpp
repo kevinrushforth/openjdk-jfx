@@ -42,7 +42,6 @@
 #include "HTMLParamElement.h"
 #include "HTMLPlugInElement.h"
 #include "HitTestResult.h"
-#include "LayoutState.h"
 #include "LocalizedStrings.h"
 #include "MouseEvent.h"
 #include "Page.h"
@@ -50,6 +49,7 @@
 #include "Path.h"
 #include "PlatformMouseEvent.h"
 #include "PluginViewBase.h"
+#include "RenderLayoutState.h"
 #include "RenderTheme.h"
 #include "RenderView.h"
 #include "Settings.h"
@@ -74,29 +74,10 @@ static const float replacementArrowLeftMargin = -4;
 static const float replacementArrowPadding = 4;
 static const float replacementArrowCirclePadding = 3;
 
-static const Color& replacementTextRoundedRectPressedColor()
-{
-    static NeverDestroyed<Color> pressed(105, 105, 105, 242);
-    return pressed;
-}
-
-static const Color& replacementTextRoundedRectColor()
-{
-    static NeverDestroyed<Color> standard(125, 125, 125, 242);
-    return standard;
-}
-
-static const Color& replacementTextColor()
-{
-    static NeverDestroyed<Color> standard(240, 240, 240, 255);
-    return standard;
-}
-
-static const Color& unavailablePluginBorderColor()
-{
-    static NeverDestroyed<Color> standard(255, 255, 255, 216);
-    return standard;
-}
+static constexpr auto replacementTextRoundedRectPressedColor = SRGBA<uint8_t> { 105, 105, 105, 242 };
+static constexpr auto replacementTextRoundedRectColor = SRGBA<uint8_t> { 125, 125, 125, 242 };
+static constexpr auto replacementTextColor = SRGBA<uint8_t> { 240, 240, 240 };
+static constexpr auto unavailablePluginBorderColor = Color::white.colorWithAlphaByte(216);
 
 RenderEmbeddedObject::RenderEmbeddedObject(HTMLFrameOwnerElement& element, RenderStyle&& style)
     : RenderWidget(element, WTFMove(style))
@@ -104,8 +85,6 @@ RenderEmbeddedObject::RenderEmbeddedObject(HTMLFrameOwnerElement& element, Rende
     , m_unavailablePluginIndicatorIsPressed(false)
     , m_mouseDownWasInUnavailablePluginIndicator(false)
 {
-    // Actual size is not known yet, report the default intrinsic size.
-    view().frameView().incrementVisuallyNonEmptyPixelCount(roundedIntSize(intrinsicSize()));
 }
 
 RenderEmbeddedObject::~RenderEmbeddedObject()
@@ -136,7 +115,7 @@ bool RenderEmbeddedObject::requiresLayer() const
 
 bool RenderEmbeddedObject::allowsAcceleratedCompositing() const
 {
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     // The timing of layer creation is different on the phone, since the plugin can only be manipulated from the main thread.
     return is<PluginViewBase>(widget()) && downcast<PluginViewBase>(*widget()).willProvidePluginLayer();
 #else
@@ -144,7 +123,7 @@ bool RenderEmbeddedObject::allowsAcceleratedCompositing() const
 #endif
 }
 
-#if !PLATFORM(IOS)
+#if !PLATFORM(IOS_FAMILY)
 static String unavailablePluginReplacementText(RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
 {
     switch (pluginUnavailabilityReason) {
@@ -156,6 +135,10 @@ static String unavailablePluginReplacementText(RenderEmbeddedObject::PluginUnava
         return blockedPluginByContentSecurityPolicyText();
     case RenderEmbeddedObject::InsecurePluginVersion:
         return insecurePluginVersionText();
+    case RenderEmbeddedObject::UnsupportedPlugin:
+        return unsupportedPluginText();
+    case RenderEmbeddedObject::PluginTooSmall:
+        return pluginTooSmallText();
     }
 
     ASSERT_NOT_REACHED();
@@ -170,7 +153,7 @@ static bool shouldUnavailablePluginMessageBeButton(Page& page, RenderEmbeddedObj
 
 void RenderEmbeddedObject::setPluginUnavailabilityReason(PluginUnavailabilityReason pluginUnavailabilityReason)
 {
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     UNUSED_PARAM(pluginUnavailabilityReason);
 #else
     setPluginUnavailabilityReasonWithDescription(pluginUnavailabilityReason, unavailablePluginReplacementText(pluginUnavailabilityReason));
@@ -179,7 +162,7 @@ void RenderEmbeddedObject::setPluginUnavailabilityReason(PluginUnavailabilityRea
 
 void RenderEmbeddedObject::setPluginUnavailabilityReasonWithDescription(PluginUnavailabilityReason pluginUnavailabilityReason, const String& description)
 {
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     UNUSED_PARAM(pluginUnavailabilityReason);
     UNUSED_PARAM(description);
 #else
@@ -220,8 +203,7 @@ void RenderEmbeddedObject::paintSnapshotImage(PaintInfo& paintInfo, const Layout
         return;
 
     InterpolationQuality interpolation = chooseInterpolationQuality(context, image, &image, alignedRect.size());
-    ImageOrientationDescription orientationDescription(shouldRespectImageOrientation(), style().imageOrientation());
-    context.drawImage(image, alignedRect, ImagePaintingOptions(orientationDescription, interpolation));
+    context.drawImage(image, alignedRect, { imageOrientation(), interpolation });
 }
 
 void RenderEmbeddedObject::paintContents(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -247,7 +229,7 @@ void RenderEmbeddedObject::paintContents(PaintInfo& paintInfo, const LayoutPoint
 void RenderEmbeddedObject::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     // The relevant repainted object heuristic is not tuned for plugin documents.
-    bool countsTowardsRelevantObjects = !document().isPluginDocument() && paintInfo.phase == PaintPhaseForeground;
+    bool countsTowardsRelevantObjects = !document().isPluginDocument() && paintInfo.phase == PaintPhase::Foreground;
 
     if (isPluginUnavailable()) {
         if (countsTowardsRelevantObjects)
@@ -290,7 +272,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     if (!showsUnavailablePluginIndicator())
         return;
 
-    if (paintInfo.phase == PaintPhaseSelection)
+    if (paintInfo.phase == PaintPhase::Selection)
         return;
 
     GraphicsContext& context = paintInfo.context();
@@ -311,7 +293,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
 
     GraphicsContextStateSaver stateSaver(context);
     context.clip(contentRect);
-    context.setFillColor(m_unavailablePluginIndicatorIsPressed ? replacementTextRoundedRectPressedColor() : replacementTextRoundedRectColor());
+    context.setFillColor(m_unavailablePluginIndicatorIsPressed ? replacementTextRoundedRectPressedColor : replacementTextRoundedRectColor);
     context.fillPath(background);
 
     Path strokePath;
@@ -319,24 +301,24 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     strokeRect.inflate(1);
     strokePath.addRoundedRect(strokeRect, FloatSize(replacementTextRoundedRectRadius + 1, replacementTextRoundedRectRadius + 1));
 
-    context.setStrokeColor(unavailablePluginBorderColor());
+    context.setStrokeColor(unavailablePluginBorderColor);
     context.setStrokeThickness(2);
     context.strokePath(strokePath);
 
     const FontMetrics& fontMetrics = font.fontMetrics();
     float labelX = roundf(replacementTextRect.location().x() + replacementTextRoundedRectLeftTextMargin);
     float labelY = roundf(replacementTextRect.location().y() + (replacementTextRect.size().height() - fontMetrics.height()) / 2 + fontMetrics.ascent() + replacementTextRoundedRectTopTextMargin);
-    context.setFillColor(replacementTextColor());
+    context.setFillColor(replacementTextColor);
     context.drawBidiText(font, run, FloatPoint(labelX, labelY));
 
     if (shouldUnavailablePluginMessageBeButton(page(), m_pluginUnavailabilityReason)) {
         arrowRect.inflate(-replacementArrowCirclePadding);
 
         context.beginTransparencyLayer(1.0);
-        context.setFillColor(replacementTextColor());
+        context.setFillColor(replacementTextColor);
         context.fillEllipse(arrowRect);
 
-        context.setCompositeOperation(CompositeClear);
+        context.setCompositeOperation(CompositeOperator::Clear);
         drawReplacementArrow(context, arrowRect);
         context.endTransparencyLayer();
     }
@@ -376,7 +358,7 @@ void RenderEmbeddedObject::getReplacementTextGeometry(const LayoutPoint& accumul
     fontDescription.setWeight(boldWeightValue());
     fontDescription.setRenderingMode(settings().fontRenderingMode());
     fontDescription.setComputedSize(12);
-    font = FontCascade(fontDescription, 0, 0);
+    font = FontCascade(WTFMove(fontDescription), 0, 0);
     font.update(0);
 
     run = TextRun(m_unavailablePluginReplacementText);

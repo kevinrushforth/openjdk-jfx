@@ -31,9 +31,8 @@
 namespace WTF {
 
 class Win32Handle {
+    WTF_MAKE_FAST_ALLOCATED;
     WTF_MAKE_NONCOPYABLE(Win32Handle);
-
-    friend class WorkQueue;
 
 public:
     Win32Handle() : m_handle(INVALID_HANDLE_VALUE) { }

@@ -28,6 +28,7 @@
 #include "config.h"
 #include "GraphicsTypes.h"
 
+#include "AlphaPremultiplication.h"
 #include <wtf/Assertions.h>
 #include <wtf/text/TextStream.h>
 #include <wtf/text/WTFString.h>
@@ -71,14 +72,14 @@ static const char* const blendOperatorNames[] = {
     "plus-darker",
     "plus-lighter"
 };
-const int numCompositeOperatorNames = WTF_ARRAY_LENGTH(compositeOperatorNames);
-const int numBlendOperatorNames = WTF_ARRAY_LENGTH(blendOperatorNames);
+const uint8_t numCompositeOperatorNames = WTF_ARRAY_LENGTH(compositeOperatorNames);
+const uint8_t numBlendOperatorNames = WTF_ARRAY_LENGTH(blendOperatorNames);
 
 bool parseBlendMode(const String& s, BlendMode& blendMode)
 {
-    for (int i = 0; i < numBlendOperatorNames; i++) {
+    for (unsigned i = 0; i < numBlendOperatorNames; i++) {
         if (s == blendOperatorNames[i]) {
-            blendMode = static_cast<BlendMode>(i + BlendModeNormal);
+            blendMode = static_cast<BlendMode>(i + static_cast<unsigned>(BlendMode::Normal));
             return true;
         }
     }
@@ -91,14 +92,14 @@ bool parseCompositeAndBlendOperator(const String& s, CompositeOperator& op, Blen
     for (int i = 0; i < numCompositeOperatorNames; i++) {
         if (s == compositeOperatorNames[i]) {
             op = static_cast<CompositeOperator>(i);
-            blendOp = BlendModeNormal;
+            blendOp = BlendMode::Normal;
             return true;
         }
     }
 
     if (parseBlendMode(s, blendOp)) {
         // For now, blending will always assume source-over. This will be fixed in the future
-        op = CompositeSourceOver;
+        op = CompositeOperator::SourceOver;
         return true;
     }
 
@@ -109,25 +110,25 @@ bool parseCompositeAndBlendOperator(const String& s, CompositeOperator& op, Blen
 // this routine needs to be updated.
 String compositeOperatorName(CompositeOperator op, BlendMode blendOp)
 {
-    ASSERT(op >= 0);
-    ASSERT(op < numCompositeOperatorNames);
-    ASSERT(blendOp >= BlendModeNormal);
-    ASSERT(blendOp <= numBlendOperatorNames);
-    if (blendOp > BlendModeNormal)
-        return blendOperatorNames[blendOp - BlendModeNormal];
-    return compositeOperatorNames[op];
+    ASSERT(op >= CompositeOperator::Clear);
+    ASSERT(static_cast<uint8_t>(op) < numCompositeOperatorNames);
+    ASSERT(blendOp >= BlendMode::Normal);
+    ASSERT(static_cast<uint8_t>(blendOp) <= numBlendOperatorNames);
+    if (blendOp > BlendMode::Normal)
+        return blendOperatorNames[static_cast<unsigned>(blendOp) - static_cast<unsigned>(BlendMode::Normal)];
+    return compositeOperatorNames[static_cast<unsigned>(op)];
 }
 
-static String blendModeName(BlendMode blendOp)
+String blendModeName(BlendMode blendOp)
 {
-    ASSERT(blendOp >= BlendModeNormal);
-    ASSERT(blendOp <= BlendModePlusLighter);
-    return blendOperatorNames[blendOp - BlendModeNormal];
+    ASSERT(blendOp >= BlendMode::Normal);
+    ASSERT(blendOp <= BlendMode::PlusLighter);
+    return blendOperatorNames[static_cast<unsigned>(blendOp) - static_cast<unsigned>(BlendMode::Normal)];
 }
 
 TextStream& operator<<(TextStream& ts, CompositeOperator op)
 {
-    return ts << compositeOperatorName(op, BlendModeNormal);
+    return ts << compositeOperatorName(op, BlendMode::Normal);
 }
 
 TextStream& operator<<(TextStream& ts, BlendMode blendMode)
@@ -138,10 +139,10 @@ TextStream& operator<<(TextStream& ts, BlendMode blendMode)
 TextStream& operator<<(TextStream& ts, WindRule rule)
 {
     switch (rule) {
-    case RULE_NONZERO:
+    case WindRule::NonZero:
         ts << "NON-ZERO";
         break;
-    case RULE_EVENODD:
+    case WindRule::EvenOdd:
         ts << "EVEN-ODD";
         break;
     }

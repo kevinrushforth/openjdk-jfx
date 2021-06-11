@@ -39,13 +39,15 @@ class AudioNodeInput;
 // It may be connected to one or more AudioNodeInputs.
 
 class AudioNodeOutput {
+    WTF_MAKE_NONCOPYABLE(AudioNodeOutput);
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     // It's OK to pass 0 for numberOfChannels in which case setNumberOfChannels() must be called later on.
     AudioNodeOutput(AudioNode*, unsigned numberOfChannels);
 
     // Can be called from any thread.
     AudioNode* node() const { return m_node; }
-    AudioContext& context() { return m_node->context(); }
+    BaseAudioContext& context() { return m_node->context(); }
 
     // Causes our AudioNode to process if it hasn't already for this render quantum.
     // It returns the bus containing the processed audio for this output, returning inPlaceBus if in-place processing was possible.

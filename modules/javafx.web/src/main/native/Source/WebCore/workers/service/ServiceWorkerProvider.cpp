@@ -28,11 +28,21 @@
 
 #if ENABLE(SERVICE_WORKER)
 
-#include "SchemeRegistry.h"
+#include "Document.h"
+#include "Frame.h"
+#include "FrameLoader.h"
+#include "FrameLoaderClient.h"
+#include "LegacySchemeRegistry.h"
+#include "Page.h"
+#include "SWClientConnection.h"
 
 namespace WebCore {
 
 static ServiceWorkerProvider* sharedProvider;
+
+ServiceWorkerProvider::~ServiceWorkerProvider()
+{
+}
 
 ServiceWorkerProvider& ServiceWorkerProvider::singleton()
 {
@@ -43,24 +53,6 @@ ServiceWorkerProvider& ServiceWorkerProvider::singleton()
 void ServiceWorkerProvider::setSharedProvider(ServiceWorkerProvider& newProvider)
 {
     sharedProvider = &newProvider;
-}
-
-bool ServiceWorkerProvider::mayHaveServiceWorkerRegisteredForOrigin(PAL::SessionID sessionID, const WebCore::SecurityOrigin& origin)
-{
-    auto* connection = existingServiceWorkerConnectionForSession(sessionID);
-    if (!connection)
-        return m_hasRegisteredServiceWorkers;
-
-    return connection->mayHaveServiceWorkerRegisteredForOrigin(origin);
-}
-
-void ServiceWorkerProvider::registerServiceWorkerClients(PAL::SessionID sessionID)
-{
-    auto& connection = serviceWorkerConnectionForSession(sessionID);
-    for (auto* document : Document::allDocuments()) {
-        if (SchemeRegistry::canServiceWorkersHandleURLScheme(document->url().protocol().toStringWithoutCopying()))
-            document->setServiceWorkerConnection(&connection);
-    }
 }
 
 } // namespace WebCore

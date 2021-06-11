@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Andy VanWagoner <thetalecrafter@gmail.com>.
+ * Copyright (C) 2015 Andy VanWagoner <andy@vanwagoner.family>.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -22,8 +22,6 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
-// @conditional=ENABLE(INTL)
 
 function toLocaleString(/* locales, options */)
 {
@@ -77,9 +75,7 @@ function toLocaleString(/* locales, options */)
 
     var options = toDateTimeOptionsAnyAll(@argument(1));
     var locales = @argument(0);
-
-    var dateFormat = new @DateTimeFormat(locales, options);
-    return dateFormat.format(value);
+    return @dateTimeFormat(locales, options, value);
 }
 
 function toLocaleDateString(/* locales, options */)
@@ -127,9 +123,7 @@ function toLocaleDateString(/* locales, options */)
 
     var options = toDateTimeOptionsDateDate(@argument(1));
     var locales = @argument(0);
-
-    var dateFormat = new @DateTimeFormat(locales, options);
-    return dateFormat.format(value);
+    return @dateTimeFormat(locales, options, value);
 }
 
 function toLocaleTimeString(/* locales, options */)
@@ -176,7 +170,5 @@ function toLocaleTimeString(/* locales, options */)
 
     var options = toDateTimeOptionsTimeTime(@argument(1));
     var locales = @argument(0);
-
-    var dateFormat = new @DateTimeFormat(locales, options);
-    return dateFormat.format(value);
+    return @dateTimeFormat(locales, options, value);
 }

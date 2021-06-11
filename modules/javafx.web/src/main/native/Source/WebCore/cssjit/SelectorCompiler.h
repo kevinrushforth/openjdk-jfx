@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,8 +30,6 @@
 #include "CompiledSelector.h"
 #include "SelectorChecker.h"
 
-#define CSS_SELECTOR_JIT_PROFILING 0
-
 namespace WebCore {
 
 class CSSSelector;
@@ -53,30 +51,30 @@ typedef unsigned (*QuerySelectorSimpleSelectorChecker)(const Element*);
 typedef unsigned (*RuleCollectorSelectorCheckerWithCheckingContext)(const Element*, SelectorChecker::CheckingContext*, unsigned*);
 typedef unsigned (*QuerySelectorSelectorCheckerWithCheckingContext)(const Element*, const SelectorChecker::CheckingContext*);
 
-SelectorCompilationStatus compileSelector(const CSSSelector*, SelectorContext, JSC::MacroAssemblerCodeRef& outputCodeRef);
+void compileSelector(CompiledSelector&, const CSSSelector*, SelectorContext);
 
-inline RuleCollectorSimpleSelectorChecker ruleCollectorSimpleSelectorCheckerFunction(void* executableAddress, SelectorCompilationStatus compilationStatus)
+inline RuleCollectorSimpleSelectorChecker ruleCollectorSimpleSelectorCheckerFunction(CompiledSelector& compiledSelector)
 {
-    ASSERT_UNUSED(compilationStatus, compilationStatus == SelectorCompilationStatus::SimpleSelectorChecker);
-    return reinterpret_cast<RuleCollectorSimpleSelectorChecker>(executableAddress);
+    ASSERT(compiledSelector.status == SelectorCompilationStatus::SimpleSelectorChecker);
+    return WTF::untagCFunctionPtr<RuleCollectorSimpleSelectorChecker, CSSSelectorPtrTag>(compiledSelector.codeRef.code().executableAddress());
 }
 
-inline QuerySelectorSimpleSelectorChecker querySelectorSimpleSelectorCheckerFunction(void* executableAddress, SelectorCompilationStatus compilationStatus)
+inline QuerySelectorSimpleSelectorChecker querySelectorSimpleSelectorCheckerFunction(CompiledSelector& compiledSelector)
 {
-    ASSERT_UNUSED(compilationStatus, compilationStatus == SelectorCompilationStatus::SimpleSelectorChecker);
-    return reinterpret_cast<QuerySelectorSimpleSelectorChecker>(executableAddress);
+    ASSERT(compiledSelector.status == SelectorCompilationStatus::SimpleSelectorChecker);
+    return WTF::untagCFunctionPtr<QuerySelectorSimpleSelectorChecker, CSSSelectorPtrTag>(compiledSelector.codeRef.code().executableAddress());
 }
 
-inline RuleCollectorSelectorCheckerWithCheckingContext ruleCollectorSelectorCheckerFunctionWithCheckingContext(void* executableAddress, SelectorCompilationStatus compilationStatus)
+inline RuleCollectorSelectorCheckerWithCheckingContext ruleCollectorSelectorCheckerFunctionWithCheckingContext(CompiledSelector& compiledSelector)
 {
-    ASSERT_UNUSED(compilationStatus, compilationStatus == SelectorCompilationStatus::SelectorCheckerWithCheckingContext);
-    return reinterpret_cast<RuleCollectorSelectorCheckerWithCheckingContext>(executableAddress);
+    ASSERT(compiledSelector.status == SelectorCompilationStatus::SelectorCheckerWithCheckingContext);
+    return WTF::untagCFunctionPtr<RuleCollectorSelectorCheckerWithCheckingContext, CSSSelectorPtrTag>(compiledSelector.codeRef.code().executableAddress());
 }
 
-inline QuerySelectorSelectorCheckerWithCheckingContext querySelectorSelectorCheckerFunctionWithCheckingContext(void* executableAddress, SelectorCompilationStatus compilationStatus)
+inline QuerySelectorSelectorCheckerWithCheckingContext querySelectorSelectorCheckerFunctionWithCheckingContext(CompiledSelector& compiledSelector)
 {
-    ASSERT_UNUSED(compilationStatus, compilationStatus == SelectorCompilationStatus::SelectorCheckerWithCheckingContext);
-    return reinterpret_cast<QuerySelectorSelectorCheckerWithCheckingContext>(executableAddress);
+    ASSERT(compiledSelector.status == SelectorCompilationStatus::SelectorCheckerWithCheckingContext);
+    return WTF::untagCFunctionPtr<QuerySelectorSelectorCheckerWithCheckingContext, CSSSelectorPtrTag>(compiledSelector.codeRef.code().executableAddress());
 }
 
 } // namespace SelectorCompiler

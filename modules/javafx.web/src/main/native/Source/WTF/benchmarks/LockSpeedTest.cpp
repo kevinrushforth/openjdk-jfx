@@ -31,7 +31,6 @@
 #include "ToyLocks.h"
 #include <thread>
 #include <unistd.h>
-#include <wtf/CurrentTime.h>
 #include <wtf/DataLog.h>
 #include <wtf/HashMap.h>
 #include <wtf/Lock.h>
@@ -75,13 +74,13 @@ struct Benchmark {
     template<typename LockType>
     static void run(const char* name)
     {
-        std::unique_ptr<WithPadding<LockType>[]> locks = std::make_unique<WithPadding<LockType>[]>(numThreadGroups);
-        std::unique_ptr<WithPadding<double>[]> words = std::make_unique<WithPadding<double>[]>(numThreadGroups);
-        std::unique_ptr<RefPtr<Thread>[]> threads = std::make_unique<RefPtr<Thread>[]>(numThreadGroups * numThreadsPerGroup);
+        std::unique_ptr<WithPadding<LockType>[]> locks = makeUniqueWithoutFastMallocCheck<WithPadding<LockType>[]>(numThreadGroups);
+        std::unique_ptr<WithPadding<double>[]> words = makeUniqueWithoutFastMallocCheck<WithPadding<double>[]>(numThreadGroups);
+        std::unique_ptr<RefPtr<Thread>[]> threads = makeUniqueWithoutFastMallocCheck<RefPtr<Thread>[]>(numThreadGroups * numThreadsPerGroup);
 
         volatile bool keepGoing = true;
 
-        double before = monotonicallyIncreasingTime();
+        MonotonicTime before = MonotonicTime::now();
 
         Lock numIterationsLock;
         uint64_t numIterations = 0;
@@ -121,9 +120,9 @@ struct Benchmark {
         for (unsigned threadIndex = numThreadGroups * numThreadsPerGroup; threadIndex--;)
             threads[threadIndex]->waitForCompletion();
 
-        double after = monotonicallyIncreasingTime();
+        MonotonicTime after = MonotonicTime::now();
 
-        reportResult(name, numIterations / (after - before) / 1000);
+        reportResult(name, numIterations / (after - before).seconds() / 1000);
     }
 };
 
@@ -160,7 +159,7 @@ bool parseValue(const char* string, unsigned* variable)
 
 int main(int argc, char** argv)
 {
-    WTF::initializeThreading();
+    WTF::initialize();
 
     if (argc != 8
         || !parseValue(argv[2], &numThreadGroups)

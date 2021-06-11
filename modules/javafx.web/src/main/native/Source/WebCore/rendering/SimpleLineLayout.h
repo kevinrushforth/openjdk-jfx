@@ -27,6 +27,7 @@
 
 #include "SimpleLineLayoutCoverage.h"
 #include "TextFlags.h"
+#include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
 
@@ -41,32 +42,35 @@ class RenderBlockFlow;
 
 namespace SimpleLineLayout {
 
+class RunResolver;
+
 bool canUseFor(const RenderBlockFlow&);
 AvoidanceReasonFlags canUseForWithReason(const RenderBlockFlow&, IncludeReasons);
-
 
 struct Run {
 #if COMPILER(MSVC)
     Run() { }
 #endif
-    Run(unsigned start, unsigned end, float logicalLeft, float logicalRight, bool isEndOfLine, bool hasHyphen)
+    Run(unsigned start, unsigned end, float logicalLeft, float logicalRight, bool isEndOfLine, bool hasHyphen, bool isLineBreak)
         : end(end)
         , start(start)
         , isEndOfLine(isEndOfLine)
         , hasHyphen(hasHyphen)
+        , isLineBreak(isLineBreak)
         , logicalLeft(logicalLeft)
         , logicalRight(logicalRight)
     { }
 
     unsigned end;
-    unsigned start : 30;
+    unsigned start : 29;
     unsigned isEndOfLine : 1;
     unsigned hasHyphen : 1;
+    unsigned isLineBreak : 1;
     float logicalLeft;
     float logicalRight;
     // TODO: Move these optional items out of SimpleLineLayout::Run to a supplementary structure.
     float expansion { 0 };
-    ExpansionBehavior expansionBehavior { ForbidLeadingExpansion | ForbidTrailingExpansion };
+    ExpansionBehavior expansionBehavior { ForbidLeftExpansion | ForbidRightExpansion };
 };
 
 struct SimpleLineStrut {
@@ -74,12 +78,14 @@ struct SimpleLineStrut {
     float offset;
 };
 
-class Layout {
+class Layout : public RefCounted<Layout> {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     using RunVector = Vector<Run, 10>;
     using SimpleLineStruts = Vector<SimpleLineStrut, 4>;
-    static std::unique_ptr<Layout> create(const RunVector&, unsigned lineCount);
+    static Ref<Layout> create(const RunVector&, unsigned lineCount, const RenderBlockFlow&);
+
+    ~Layout();
 
     unsigned lineCount() const { return m_lineCount; }
 
@@ -91,17 +97,21 @@ public:
     bool hasLineStruts() const { return !m_lineStruts.isEmpty(); }
     void setLineStruts(SimpleLineStruts&& lineStruts) { m_lineStruts = lineStruts; }
     const SimpleLineStruts& struts() const { return m_lineStruts; }
+    const RunResolver& runResolver() const;
+
 private:
-    Layout(const RunVector&, unsigned lineCount);
+    Layout(const RunVector&, unsigned lineCount, const RenderBlockFlow&);
 
     unsigned m_lineCount;
     unsigned m_runCount;
     bool m_isPaginated { false };
     SimpleLineStruts m_lineStruts;
+    const RenderBlockFlow& m_blockFlowRenderer;
+    mutable std::unique_ptr<RunResolver> m_runResolver;
     Run m_runs[0];
 };
 
-std::unique_ptr<Layout> create(RenderBlockFlow&);
+Ref<Layout> create(RenderBlockFlow&);
 
 }
 }

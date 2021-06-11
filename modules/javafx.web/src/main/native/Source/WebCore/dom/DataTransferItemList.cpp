@@ -31,8 +31,11 @@
 #include "Pasteboard.h"
 #include "RuntimeEnabledFeatures.h"
 #include "Settings.h"
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(DataTransferItemList);
 
 DataTransferItemList::DataTransferItemList(DataTransfer& dataTransfer)
     : m_dataTransfer(dataTransfer)
@@ -76,7 +79,7 @@ ExceptionOr<RefPtr<DataTransferItem>> DataTransferItemList::add(const String& da
 
     m_dataTransfer.setDataFromItemList(lowercasedType, data);
     ASSERT(m_items);
-    m_items->append(DataTransferItem::create(m_weakPtrFactory.createWeakPtr(*this), lowercasedType));
+    m_items->append(DataTransferItem::create(makeWeakPtr(*this), lowercasedType));
     return m_items->last().ptr();
 }
 
@@ -85,7 +88,7 @@ RefPtr<DataTransferItem> DataTransferItemList::add(Ref<File>&& file)
     if (!m_dataTransfer.canWriteData())
         return nullptr;
 
-    ensureItems().append(DataTransferItem::create(m_weakPtrFactory.createWeakPtr(*this), file->type(), file.copyRef()));
+    ensureItems().append(DataTransferItem::create(makeWeakPtr(*this), file->type(), file.copyRef()));
     m_dataTransfer.didAddFileToItemList();
     return m_items->last().ptr();
 }
@@ -136,11 +139,11 @@ Vector<Ref<DataTransferItem>>& DataTransferItemList::ensureItems() const
     for (auto& type : m_dataTransfer.typesForItemList()) {
         auto lowercasedType = type.convertToASCIILowercase();
         if (shouldExposeTypeInItemList(lowercasedType))
-            items.append(DataTransferItem::create(m_weakPtrFactory.createWeakPtr(*const_cast<DataTransferItemList*>(this)), lowercasedType));
+            items.append(DataTransferItem::create(makeWeakPtr(*const_cast<DataTransferItemList*>(this)), lowercasedType));
     }
 
     for (auto& file : m_dataTransfer.files().files())
-        items.append(DataTransferItem::create(m_weakPtrFactory.createWeakPtr(*const_cast<DataTransferItemList*>(this)), file->type(), file.copyRef()));
+        items.append(DataTransferItem::create(makeWeakPtr(*const_cast<DataTransferItemList*>(this)), file->type(), file.copyRef()));
 
     m_items = WTFMove(items);
 
@@ -185,7 +188,7 @@ void DataTransferItemList::didSetStringData(const String& type)
     String lowercasedType = type.convertToASCIILowercase();
     removeStringItemOfLowercasedType(*m_items, type.convertToASCIILowercase());
 
-    m_items->append(DataTransferItem::create(m_weakPtrFactory.createWeakPtr(*this), lowercasedType));
+    m_items->append(DataTransferItem::create(makeWeakPtr(*this), lowercasedType));
 }
 
 }

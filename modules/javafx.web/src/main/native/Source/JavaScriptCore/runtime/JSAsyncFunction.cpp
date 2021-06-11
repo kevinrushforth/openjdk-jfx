@@ -26,13 +26,8 @@
 #include "config.h"
 #include "JSAsyncFunction.h"
 
-#include "Error.h"
-#include "JSCInlines.h"
-#include "JSCJSValue.h"
-#include "JSFunction.h"
+#include "JSCellInlines.h"
 #include "JSFunctionInlines.h"
-#include "JSObject.h"
-#include "PropertySlot.h"
 #include "VM.h"
 
 namespace JSC {
@@ -47,28 +42,28 @@ JSAsyncFunction::JSAsyncFunction(VM& vm, FunctionExecutable* executable, JSScope
 JSAsyncFunction* JSAsyncFunction::createImpl(VM& vm, FunctionExecutable* executable, JSScope* scope, Structure* structure)
 {
     JSAsyncFunction* asyncFunction = new (NotNull, allocateCell<JSAsyncFunction>(vm.heap)) JSAsyncFunction(vm, executable, scope, structure);
-    ASSERT(asyncFunction->structure()->globalObject());
+    ASSERT(asyncFunction->structure(vm)->globalObject());
     asyncFunction->finishCreation(vm);
     return asyncFunction;
 }
 
 JSAsyncFunction* JSAsyncFunction::create(VM& vm, FunctionExecutable* executable, JSScope* scope)
 {
-    JSAsyncFunction* asyncFunction = createImpl(vm, executable, scope, scope->globalObject()->asyncFunctionStructure());
-    executable->singletonFunction()->notifyWrite(vm, asyncFunction, "Allocating an async function");
+    JSAsyncFunction* asyncFunction = createImpl(vm, executable, scope, scope->globalObject(vm)->asyncFunctionStructure());
+    executable->notifyCreation(vm, asyncFunction, "Allocating an async function");
     return asyncFunction;
 }
 
 JSAsyncFunction* JSAsyncFunction::create(VM& vm, FunctionExecutable* executable, JSScope* scope, Structure* structure)
 {
     JSAsyncFunction* asyncFunction = createImpl(vm, executable, scope, structure);
-    executable->singletonFunction()->notifyWrite(vm, asyncFunction, "Allocating an async function");
+    executable->notifyCreation(vm, asyncFunction, "Allocating an async function");
     return asyncFunction;
 }
 
 JSAsyncFunction* JSAsyncFunction::createWithInvalidatedReallocationWatchpoint(VM& vm, FunctionExecutable* executable, JSScope* scope)
 {
-    return createImpl(vm, executable, scope, scope->globalObject()->asyncFunctionStructure());
+    return createImpl(vm, executable, scope, scope->globalObject(vm)->asyncFunctionStructure());
 }
 
 }

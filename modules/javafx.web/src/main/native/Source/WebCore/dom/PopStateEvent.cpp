@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009 Apple Inc. All Rights Reserved.
+ * Copyright (C) 2009-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,17 +30,20 @@
 #include "EventNames.h"
 #include "History.h"
 #include <JavaScriptCore/JSCInlines.h>
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
 
-PopStateEvent::PopStateEvent(JSC::ExecState& state, const AtomicString& type, const Init& initializer, IsTrusted isTrusted)
+WTF_MAKE_ISO_ALLOCATED_IMPL(PopStateEvent);
+
+PopStateEvent::PopStateEvent(const AtomString& type, const Init& initializer, IsTrusted isTrusted)
     : Event(type, initializer, isTrusted)
-    , m_state(state.vm(), initializer.state)
+    , m_state(initializer.state)
 {
 }
 
 PopStateEvent::PopStateEvent(RefPtr<SerializedScriptValue>&& serializedState, History* history)
-    : Event(eventNames().popstateEvent, false, true)
+    : Event(eventNames().popstateEvent, CanBubble::No, IsCancelable::No)
     , m_serializedState(WTFMove(serializedState))
     , m_history(history)
 {
@@ -53,9 +56,9 @@ Ref<PopStateEvent> PopStateEvent::create(RefPtr<SerializedScriptValue>&& seriali
     return adoptRef(*new PopStateEvent(WTFMove(serializedState), history));
 }
 
-Ref<PopStateEvent> PopStateEvent::create(JSC::ExecState& state, const AtomicString& type, const Init& initializer, IsTrusted isTrusted)
+Ref<PopStateEvent> PopStateEvent::create(const AtomString& type, const Init& initializer, IsTrusted isTrusted)
 {
-    return adoptRef(*new PopStateEvent(state, type, initializer, isTrusted));
+    return adoptRef(*new PopStateEvent(type, initializer, isTrusted));
 }
 
 Ref<PopStateEvent> PopStateEvent::createForBindings()
@@ -63,12 +66,12 @@ Ref<PopStateEvent> PopStateEvent::createForBindings()
     return adoptRef(*new PopStateEvent);
 }
 
-RefPtr<SerializedScriptValue> PopStateEvent::trySerializeState(JSC::ExecState& executionState)
+RefPtr<SerializedScriptValue> PopStateEvent::trySerializeState(JSC::JSGlobalObject& executionState)
 {
-    ASSERT(!m_state.hasNoValue());
+    ASSERT(m_state);
 
     if (!m_serializedState && !m_triedToSerialize) {
-        m_serializedState = SerializedScriptValue::create(executionState, m_state.jsValue(), SerializationErrorMode::NonThrowing);
+        m_serializedState = SerializedScriptValue::create(executionState, m_state, SerializationErrorMode::NonThrowing);
         m_triedToSerialize = true;
     }
 

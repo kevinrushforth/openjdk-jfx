@@ -29,15 +29,16 @@
 #pragma once
 
 #include "DOMFormData.h"
+#include "ExceptionOr.h"
 #include "FetchBodyConsumer.h"
 #include "FormData.h"
-#include "JSDOMPromiseDeferred.h"
 #include "ReadableStream.h"
 #include "URLSearchParams.h"
 #include <wtf/Variant.h>
 
 namespace WebCore {
 
+class DeferredPromise;
 class FetchBodyOwner;
 class FetchBodySource;
 class ScriptExecutionContext;
@@ -48,22 +49,20 @@ public:
     void blob(FetchBodyOwner&, Ref<DeferredPromise>&&, const String&);
     void json(FetchBodyOwner&, Ref<DeferredPromise>&&);
     void text(FetchBodyOwner&, Ref<DeferredPromise>&&);
-    void formData(FetchBodyOwner&, Ref<DeferredPromise>&& promise) { promise.get().reject(NotSupportedError); }
+    void formData(FetchBodyOwner&, Ref<DeferredPromise>&&);
 
-#if ENABLE(STREAMS_API)
     void consumeAsStream(FetchBodyOwner&, FetchBodySource&);
-#endif
 
     using Init = Variant<RefPtr<Blob>, RefPtr<ArrayBufferView>, RefPtr<ArrayBuffer>, RefPtr<DOMFormData>, RefPtr<URLSearchParams>, RefPtr<ReadableStream>, String>;
-    static FetchBody extract(ScriptExecutionContext&, Init&&, String&);
+    static ExceptionOr<FetchBody> extract(Init&&, String&);
     FetchBody() = default;
 
-    WEBCORE_EXPORT static std::optional<FetchBody> fromFormData(FormData&);
+    WEBCORE_EXPORT static Optional<FetchBody> fromFormData(FormData&);
 
-    void loadingFailed();
+    void loadingFailed(const Exception&);
     void loadingSucceeded();
 
-    RefPtr<FormData> bodyAsFormData(ScriptExecutionContext&) const;
+    RefPtr<FormData> bodyAsFormData() const;
 
     using TakenData = Variant<std::nullptr_t, Ref<FormData>, Ref<SharedBuffer>>;
     TakenData take();
@@ -85,6 +84,9 @@ public:
         m_readableStream = WTFMove(stream);
     }
 
+    bool isBlob() const { return WTF::holds_alternative<Ref<const Blob>>(m_data); }
+    bool isFormData() const { return WTF::holds_alternative<Ref<FormData>>(m_data); }
+
 private:
     explicit FetchBody(Ref<const Blob>&& data) : m_data(WTFMove(data)) { }
     explicit FetchBody(Ref<const ArrayBuffer>&& data) : m_data(WTFMove(data)) { }
@@ -102,8 +104,6 @@ private:
     void consumeText(Ref<DeferredPromise>&&, const String&);
     void consumeBlob(FetchBodyOwner&, Ref<DeferredPromise>&&);
 
-    bool isBlob() const { return WTF::holds_alternative<Ref<const Blob>>(m_data); }
-    bool isFormData() const { return WTF::holds_alternative<Ref<FormData>>(m_data); }
     bool isArrayBuffer() const { return WTF::holds_alternative<Ref<const ArrayBuffer>>(m_data); }
     bool isArrayBufferView() const { return WTF::holds_alternative<Ref<const ArrayBufferView>>(m_data); }
     bool isURLSearchParams() const { return WTF::holds_alternative<Ref<const URLSearchParams>>(m_data); }

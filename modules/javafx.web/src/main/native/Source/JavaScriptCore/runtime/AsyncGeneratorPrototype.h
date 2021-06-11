@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2017 Oleksandr Skachkov <gskachkov@gmail.com>.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,10 +32,17 @@ namespace JSC {
 
 // %AsyncGeneratorPrototype% intrinsic.
 // https://tc39.github.io/ecma262/#sec-properties-of-generator-prototype
-class AsyncGeneratorPrototype : public JSNonFinalObject {
+class AsyncGeneratorPrototype final : public JSNonFinalObject {
 public:
     using Base = JSNonFinalObject;
-    static const unsigned StructureFlags = Base::StructureFlags | HasStaticPropertyTable;
+    static constexpr unsigned StructureFlags = Base::StructureFlags | HasStaticPropertyTable;
+
+    template<typename CellType, SubspaceAccess>
+    static IsoSubspace* subspaceFor(VM& vm)
+    {
+        STATIC_ASSERT_ISO_SUBSPACE_SHARABLE(AsyncGeneratorPrototype, Base);
+        return &vm.plainObjectSpace;
+    }
 
     static AsyncGeneratorPrototype* create(VM& vm, JSGlobalObject*, Structure* structure)
     {

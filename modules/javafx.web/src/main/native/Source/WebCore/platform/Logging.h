@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2003-2017 Apple Inc.  All rights reserved.
+ * Copyright (C) 2003-2020 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,21 +38,33 @@ namespace WebCore {
 #endif
 
 #define WEBCORE_LOG_CHANNELS(M) \
+    M(Accessibility) \
+    M(AdClickAttribution) \
     M(Animations) \
+    M(ApplePay) \
     M(Archives) \
+    M(BackForwardCache) \
+    M(Calc) \
+    M(ClipRects) \
     M(Compositing) \
+    M(CompositingOverlap) \
     M(ContentFiltering) \
+    M(ContentObservation) \
     M(DatabaseTracker) \
     M(DisplayLists) \
     M(DOMTimers) \
     M(Editing) \
+    M(EME) \
     M(Events) \
+    M(EventRegions) \
     M(FileAPI) \
     M(Filters) \
+    M(Fonts) \
     M(Frames) \
     M(FTP) \
     M(Fullscreen) \
     M(Gamepad) \
+    M(HID) \
     M(History) \
     M(IOSurface) \
     M(IconDatabase) \
@@ -62,6 +74,7 @@ namespace WebCore {
     M(IndexedDBOperations) \
     M(Layers) \
     M(Layout) \
+    M(FormattingContextLayout) \
     M(Loading) \
     M(Media) \
     M(MediaCaptureSamples) \
@@ -73,7 +86,7 @@ namespace WebCore {
     M(MessagePorts) \
     M(Network) \
     M(NotYetImplemented) \
-    M(PageCache) \
+    M(OverlayScrollbars) \
     M(PerformanceLogging) \
     M(PlatformLeaks) \
     M(Plugins) \
@@ -84,11 +97,16 @@ namespace WebCore {
     M(ResourceLoading) \
     M(ResourceLoadObserver) \
     M(ResourceLoadStatistics) \
+    M(ScrollSnap) \
     M(Scrolling) \
+    M(ScrollingTree) \
+    M(ScrollLatching) \
+    M(Selection) \
     M(Services) \
     M(ServiceWorker) \
     M(SpellingAndGrammar) \
     M(SQLDatabase) \
+    M(Storage) \
     M(StorageAPI) \
     M(SVG) \
     M(TextAutosizing) \
@@ -100,7 +118,9 @@ namespace WebCore {
     M(WebGL) \
     M(WebGPU) \
     M(WebRTC) \
-    M(WheelEventTestTriggers) \
+    M(WebRTCStats) \
+    M(XR) \
+    M(WheelEventTestMonitor) \
 
 #undef DECLARE_LOG_CHANNEL
 #define DECLARE_LOG_CHANNEL(name) \
@@ -110,7 +130,6 @@ WEBCORE_LOG_CHANNELS(DECLARE_LOG_CHANNEL)
 
 String logLevelString();
 bool isLogChannelEnabled(const String& name);
-WEBCORE_EXPORT void setLogChannelToAccumulate(const String& name);
 
 #endif // !LOG_DISABLED || !RELEASE_LOG_DISABLED
 

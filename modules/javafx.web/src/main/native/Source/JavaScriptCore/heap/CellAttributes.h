@@ -27,7 +27,6 @@
 
 #include "DestructionMode.h"
 #include "HeapCell.h"
-#include "SecurityKind.h"
 #include <wtf/PrintStream.h>
 
 namespace JSC {
@@ -35,18 +34,16 @@ namespace JSC {
 struct CellAttributes {
     CellAttributes() { }
 
-    CellAttributes(DestructionMode destruction, HeapCell::Kind cellKind, SecurityKind securityKind)
+    CellAttributes(DestructionMode destruction, HeapCell::Kind cellKind)
         : destruction(destruction)
         , cellKind(cellKind)
-        , securityKind(securityKind)
     {
     }
 
-    void dump(PrintStream& out) const;
+    JS_EXPORT_PRIVATE void dump(PrintStream& out) const;
 
     DestructionMode destruction { DoesNotNeedDestruction };
     HeapCell::Kind cellKind { HeapCell::JSCell };
-    SecurityKind securityKind { SecurityKind::DangerousBits };
 };
 
 } // namespace JSC

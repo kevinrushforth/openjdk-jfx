@@ -26,9 +26,11 @@
 #pragma once
 
 #include "RenderTreePosition.h"
+#include "RenderWidget.h"
 
 namespace WebCore {
 
+class RenderFullScreen;
 class RenderGrid;
 class RenderTreeUpdater;
 
@@ -41,10 +43,10 @@ public:
     // FIXME: Remove.
     static RenderTreeBuilder* current() { return s_current; }
 
-    void attach(RenderTreePosition&, RenderPtr<RenderObject>);
     void attach(RenderElement& parent, RenderPtr<RenderObject>, RenderObject* beforeChild = nullptr);
 
-    RenderPtr<RenderObject> detach(RenderElement&, RenderObject&) WARN_UNUSED_RETURN;
+    enum class CanCollapseAnonymousBlock { No, Yes };
+    RenderPtr<RenderObject> detach(RenderElement&, RenderObject&, CanCollapseAnonymousBlock = CanCollapseAnonymousBlock::Yes) WARN_UNUSED_RETURN;
 
     void destroy(RenderObject& renderer);
 
@@ -61,6 +63,8 @@ public:
 #endif
 
 private:
+    void attachInternal(RenderElement& parent, RenderPtr<RenderObject>, RenderObject* beforeChild);
+
     void childFlowStateChangesAndAffectsParentBlock(RenderElement& child);
     void childFlowStateChangesAndNoLongerAffectsParentBlock(RenderElement& child);
     void attachIgnoringContinuation(RenderElement& parent, RenderPtr<RenderObject>, RenderObject* beforeChild = nullptr);
@@ -68,7 +72,8 @@ private:
     void attachToRenderElement(RenderElement& parent, RenderPtr<RenderObject> child, RenderObject* beforeChild = nullptr);
     void attachToRenderElementInternal(RenderElement& parent, RenderPtr<RenderObject> child, RenderObject* beforeChild = nullptr);
 
-    RenderPtr<RenderObject> detachFromRenderElement(RenderElement& parent, RenderObject& child) WARN_UNUSED_RETURN;
+    enum class WillBeDestroyed { No, Yes };
+    RenderPtr<RenderObject> detachFromRenderElement(RenderElement& parent, RenderObject& child, WillBeDestroyed = WillBeDestroyed::Yes) WARN_UNUSED_RETURN;
     RenderPtr<RenderObject> detachFromRenderGrid(RenderGrid& parent, RenderObject& child) WARN_UNUSED_RETURN;
 
     void move(RenderBoxModelObject& from, RenderBoxModelObject& to, RenderObject& child, RenderObject* beforeChild, NormalizeAfterInsertion);
@@ -80,9 +85,11 @@ private:
     void moveAllChildren(RenderBoxModelObject& from, RenderBoxModelObject& to, NormalizeAfterInsertion);
     void moveAllChildren(RenderBoxModelObject& from, RenderBoxModelObject& to, RenderObject* beforeChild, NormalizeAfterInsertion);
 
-    RenderObject* splitAnonymousBoxesAroundChild(RenderBox& parent, RenderObject* beforeChild);
+    RenderObject* splitAnonymousBoxesAroundChild(RenderBox& parent, RenderObject& originalBeforeChild);
     void makeChildrenNonInline(RenderBlock& parent, RenderObject* insertionPoint = nullptr);
     void removeAnonymousWrappersForInlineChildrenIfNeeded(RenderElement& parent);
+
+    void reportVisuallyNonEmptyContent(const RenderElement& parent, const RenderObject& child);
 
     class FirstLetter;
     class List;
@@ -94,7 +101,9 @@ private:
     class BlockFlow;
     class Inline;
     class SVG;
+#if ENABLE(MATHML)
     class MathML;
+#endif
     class Continuation;
 #if ENABLE(FULLSCREEN_API)
     class FullScreen;
@@ -110,12 +119,15 @@ private:
     BlockFlow& blockFlowBuilder() { return *m_blockFlowBuilder; }
     Inline& inlineBuilder() { return *m_inlineBuilder; }
     SVG& svgBuilder() { return *m_svgBuilder; }
+#if ENABLE(MATHML)
     MathML& mathMLBuilder() { return *m_mathMLBuilder; }
+#endif
     Continuation& continuationBuilder() { return *m_continuationBuilder; }
 #if ENABLE(FULLSCREEN_API)
     FullScreen& fullScreenBuilder() { return *m_fullScreenBuilder; }
 #endif
 
+    WidgetHierarchyUpdatesSuspensionScope m_widgetHierarchyUpdatesSuspensionScope;
     RenderView& m_view;
     RenderTreeBuilder* m_previous { nullptr };
     static RenderTreeBuilder* s_current;
@@ -130,7 +142,9 @@ private:
     std::unique_ptr<BlockFlow> m_blockFlowBuilder;
     std::unique_ptr<Inline> m_inlineBuilder;
     std::unique_ptr<SVG> m_svgBuilder;
+#if ENABLE(MATHML)
     std::unique_ptr<MathML> m_mathMLBuilder;
+#endif
     std::unique_ptr<Continuation> m_continuationBuilder;
 #if ENABLE(FULLSCREEN_API)
     std::unique_ptr<FullScreen> m_fullScreenBuilder;

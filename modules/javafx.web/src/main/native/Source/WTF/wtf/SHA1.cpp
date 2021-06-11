@@ -30,10 +30,10 @@
  */
 
 #include "config.h"
-#include "SHA1.h"
+#include <wtf/SHA1.h>
 
-#include "Assertions.h"
-#include "text/CString.h"
+#include <wtf/Assertions.h>
+#include <wtf/text/CString.h>
 
 namespace WTF {
 
@@ -41,17 +41,23 @@ namespace WTF {
 
 SHA1::SHA1()
 {
+    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     CC_SHA1_Init(&m_context);
+    ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
 void SHA1::addBytes(const uint8_t* input, size_t length)
 {
+    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     CC_SHA1_Update(&m_context, input, length);
+    ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
 void SHA1::computeHash(Digest& hash)
 {
+    ALLOW_DEPRECATED_DECLARATIONS_BEGIN
     CC_SHA1_Final(hash.data(), &m_context);
+    ALLOW_DEPRECATED_DECLARATIONS_END
 }
 
 #else
@@ -198,7 +204,7 @@ void SHA1::reset()
 
 CString SHA1::hexDigest(const Digest& digest)
 {
-    char* start = 0;
+    char* start = nullptr;
     CString result = CString::newUninitialized(40, start);
     char* buffer = start;
     for (size_t i = 0; i < hashSize; ++i) {

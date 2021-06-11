@@ -33,7 +33,6 @@
 #include "Frame.h"
 #include "FrameLoadRequest.h"
 #include "FrameLoader.h"
-#include "MainFrame.h"
 #include "Page.h"
 #include "PlatformKeyboardEvent.h"
 #include "PlatformMouseEvent.h"
@@ -46,7 +45,7 @@ UserInputBridge::UserInputBridge(Page& page)
 {
 }
 
-#if ENABLE(CONTEXT_MENUS)
+#if ENABLE(CONTEXT_MENU_EVENT)
 bool UserInputBridge::handleContextMenuEvent(const PlatformMouseEvent& mouseEvent, Frame& frame, InputSource)
 {
     return frame.eventHandler().sendContextMenuEvent(mouseEvent);

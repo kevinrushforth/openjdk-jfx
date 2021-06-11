@@ -34,16 +34,17 @@
 
 #include "Texture.h"
 
-#include "Extensions3D.h"
+#include "ExtensionsGL.h"
 #include "FloatRect.h"
-#include "GraphicsContext3D.h"
+#include "GraphicsContextGLOpenGL.h"
 #include "IntRect.h"
 #include <algorithm>
 #include <wtf/StdLibExtras.h>
+#include <wtf/UniqueArray.h>
 
 namespace WebCore {
 
-Texture::Texture(GraphicsContext3D* context, std::unique_ptr<Vector<unsigned>> tileTextureIds, Format format, int width, int height, int maxTextureSize)
+Texture::Texture(GraphicsContextGLOpenGL* context, std::unique_ptr<Vector<unsigned>> tileTextureIds, Format format, int width, int height, int maxTextureSize)
     : m_context(context)
     , m_format(format)
     , m_tiles(IntSize(maxTextureSize, maxTextureSize), IntSize(width, height), true)
@@ -53,25 +54,25 @@ Texture::Texture(GraphicsContext3D* context, std::unique_ptr<Vector<unsigned>> t
 
 Texture::~Texture()
 {
-    for (unsigned int i = 0; i < m_tileTextureIds->size(); i++)
+    for (unsigned i = 0; i < m_tileTextureIds->size(); i++)
         m_context->deleteTexture(m_tileTextureIds->at(i));
 }
 
-static void convertFormat(GraphicsContext3D* context, Texture::Format format, unsigned int* glFormat, unsigned int* glType, bool* swizzle)
+static void convertFormat(GraphicsContextGLOpenGL* context, Texture::Format format, unsigned* glFormat, unsigned* glType, bool* swizzle)
 {
     *swizzle = false;
     switch (format) {
     case Texture::RGBA8:
-        *glFormat = GraphicsContext3D::RGBA;
-        *glType = GraphicsContext3D::UNSIGNED_BYTE;
+        *glFormat = GraphicsContextGL::RGBA;
+        *glType = GraphicsContextGL::UNSIGNED_BYTE;
         break;
     case Texture::BGRA8:
         if (context->getExtensions().supports("GL_EXT_texture_format_BGRA8888")) {
-            *glFormat = Extensions3D::BGRA_EXT;
-            *glType = GraphicsContext3D::UNSIGNED_BYTE;
+            *glFormat = ExtensionsGL::BGRA_EXT;
+            *glType = GraphicsContextGL::UNSIGNED_BYTE;
         } else {
-            *glFormat = GraphicsContext3D::RGBA;
-            *glType = GraphicsContext3D::UNSIGNED_BYTE;
+            *glFormat = GraphicsContextGL::RGBA;
+            *glType = GraphicsContextGL::UNSIGNED_BYTE;
             *swizzle = true;
         }
         break;
@@ -81,10 +82,10 @@ static void convertFormat(GraphicsContext3D* context, Texture::Format format, un
     }
 }
 
-RefPtr<Texture> Texture::create(GraphicsContext3D* context, Format format, int width, int height)
+RefPtr<Texture> Texture::create(GraphicsContextGLOpenGL* context, Format format, int width, int height)
 {
     int maxTextureSize = 0;
-    context->getIntegerv(GraphicsContext3D::MAX_TEXTURE_SIZE, &maxTextureSize);
+    context->getIntegerv(GraphicsContextGL::MAX_TEXTURE_SIZE, &maxTextureSize);
     TilingData tiling(IntSize(maxTextureSize, maxTextureSize), IntSize(width, height), true);
 
     // Check for overflow.
@@ -94,7 +95,7 @@ RefPtr<Texture> Texture::create(GraphicsContext3D* context, Format format, int w
         numTiles = 0;
     }
 
-    auto textureIds = std::make_unique<Vector<unsigned>>(numTiles);
+    auto textureIds = makeUnique<Vector<unsigned>>(numTiles);
     textureIds->fill(0, numTiles);
 
     for (int i = 0; i < numTiles; i++) {
@@ -114,8 +115,8 @@ RefPtr<Texture> Texture::create(GraphicsContext3D* context, Format format, int w
         unsigned int glType = 0;
         bool swizzle;
         convertFormat(context, format, &glFormat, &glType, &swizzle);
-        context->bindTexture(GraphicsContext3D::TEXTURE_2D, textureId);
-        context->texImage2DResourceSafe(GraphicsContext3D::TEXTURE_2D, 0, glFormat,
+        context->bindTexture(GraphicsContextGL::TEXTURE_2D, textureId);
+        context->texImage2DResourceSafe(GraphicsContextGL::TEXTURE_2D, 0, glFormat,
                                         tileBoundsWithBorder.width(),
                                         tileBoundsWithBorder.height(),
                                         0, glFormat, glType);
@@ -164,13 +165,13 @@ void Texture::updateSubRect(void* pixels, const IntRect& updateRect)
     bool swizzle;
     convertFormat(m_context, m_format, &glFormat, &glType, &swizzle);
     if (swizzle) {
-        ASSERT(glFormat == GraphicsContext3D::RGBA && glType == GraphicsContext3D::UNSIGNED_BYTE);
+        ASSERT(glFormat == GraphicsContextGL::RGBA && glType == GraphicsContextGL::UNSIGNED_BYTE);
         // FIXME:  This could use PBO's to save doing an extra copy here.
     }
     int tempBuffSize = // Temporary buffer size is the smaller of the max texture size or the updateRectSanitized
         std::min(m_tiles.maxTextureSize().width(), m_tiles.borderTexels() + updateRectSanitized.width()) *
         std::min(m_tiles.maxTextureSize().height(), m_tiles.borderTexels() + updateRectSanitized.height());
-    auto tempBuff = std::make_unique<uint32_t[]>(tempBuffSize);
+    auto tempBuff = makeUniqueArray<uint32_t>(tempBuffSize);
 
     for (int tile = 0; tile < m_tiles.numTilesX() * m_tiles.numTilesY(); tile++) {
         int xIndex = tile % m_tiles.numTilesX();
@@ -200,8 +201,8 @@ void Texture::updateSubRect(void* pixels, const IntRect& updateRect)
             tempBuff.get(), updateRectIntersected.width(), updateRectIntersected.height(), m_tiles.totalSize().width());
         }
 
-        m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_tileTextureIds->at(tile));
-        m_context->texSubImage2D(GraphicsContext3D::TEXTURE_2D, 0 /* level */,
+        m_context->bindTexture(GraphicsContextGL::TEXTURE_2D, m_tileTextureIds->at(tile));
+        m_context->texSubImage2D(GraphicsContextGL::TEXTURE_2D, 0 /* level */,
             dstRect.x(),
             dstRect.y(),
             updateRectIntersected.width(),
@@ -211,11 +212,11 @@ void Texture::updateSubRect(void* pixels, const IntRect& updateRect)
 
 void Texture::bindTile(int tile)
 {
-    m_context->bindTexture(GraphicsContext3D::TEXTURE_2D, m_tileTextureIds->at(tile));
-    m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MIN_FILTER, GraphicsContext3D::LINEAR);
-    m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_MAG_FILTER, GraphicsContext3D::LINEAR);
-    m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_S, GraphicsContext3D::CLAMP_TO_EDGE);
-    m_context->texParameteri(GraphicsContext3D::TEXTURE_2D, GraphicsContext3D::TEXTURE_WRAP_T, GraphicsContext3D::CLAMP_TO_EDGE);
+    m_context->bindTexture(GraphicsContextGL::TEXTURE_2D, m_tileTextureIds->at(tile));
+    m_context->texParameteri(GraphicsContextGL::TEXTURE_2D, GraphicsContextGL::TEXTURE_MIN_FILTER, GraphicsContextGL::LINEAR);
+    m_context->texParameteri(GraphicsContextGL::TEXTURE_2D, GraphicsContextGL::TEXTURE_MAG_FILTER, GraphicsContextGL::LINEAR);
+    m_context->texParameteri(GraphicsContextGL::TEXTURE_2D, GraphicsContextGL::TEXTURE_WRAP_S, GraphicsContextGL::CLAMP_TO_EDGE);
+    m_context->texParameteri(GraphicsContextGL::TEXTURE_2D, GraphicsContextGL::TEXTURE_WRAP_T, GraphicsContextGL::CLAMP_TO_EDGE);
 }
 
 }

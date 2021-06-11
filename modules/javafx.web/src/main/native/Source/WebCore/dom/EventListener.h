@@ -31,6 +31,7 @@ namespace WebCore {
 
 class ScriptExecutionContext;
 class Event;
+class EventTarget;
 
 class EventListener : public RefCounted<EventListener> {
 public:
@@ -52,12 +53,19 @@ public:
 
     virtual void visitJSFunction(JSC::SlotVisitor&) { }
 
-    bool isAttribute() const { return virtualisAttribute(); }
+    virtual bool isAttribute() const { return false; }
     Type type() const { return m_type; }
+
+#if ASSERT_ENABLED
+    virtual void checkValidityForEventTarget(EventTarget&) { }
+#endif
 
 #if PLATFORM(JAVA)
     virtual bool isJavaEventListener() const { return false; }
 #endif
+
+    virtual JSC::JSObject* jsFunction() const { return nullptr; }
+    virtual JSC::JSObject* wrapper() const { return nullptr; }
 
 protected:
     explicit EventListener(Type type)
@@ -66,8 +74,6 @@ protected:
     }
 
 private:
-    virtual bool virtualisAttribute() const { return false; }
-
     Type m_type;
 };
 

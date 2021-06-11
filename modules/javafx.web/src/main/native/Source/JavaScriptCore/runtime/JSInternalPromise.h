@@ -39,16 +39,17 @@ class JSFunction;
 //     Replacing Promise.prototype.then with the user-customized one does not effect on JSInternalPromise.
 //
 // CAUTION: Must not leak the JSInternalPromise to the user space to keep its integrity.
-class JSInternalPromise : public JSPromise {
+class JSInternalPromise final : public JSPromise {
 public:
     typedef JSPromise Base;
 
-    static JSInternalPromise* create(VM&, Structure*);
+    JS_EXPORT_PRIVATE static JSInternalPromise* create(VM&, Structure*);
+    static JSInternalPromise* createWithInitialValues(VM&, Structure*);
     static Structure* createStructure(VM&, JSGlobalObject*, JSValue);
 
     DECLARE_EXPORT_INFO;
 
-    JS_EXPORT_PRIVATE JSInternalPromise* then(ExecState*, JSFunction* = nullptr, JSFunction* = nullptr);
+    JS_EXPORT_PRIVATE JSInternalPromise* then(JSGlobalObject*, JSFunction* = nullptr, JSFunction* = nullptr);
 
 private:
     JSInternalPromise(VM&, Structure*);

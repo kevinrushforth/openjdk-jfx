@@ -30,14 +30,17 @@
 #include "HTMLParserIdioms.h"
 #include "RenderLayer.h"
 #include "RenderMarquee.h"
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(HTMLMarqueeElement);
 
 using namespace HTMLNames;
 
 inline HTMLMarqueeElement::HTMLMarqueeElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
-    , ActiveDOMObject(&document)
+    , ActiveDOMObject(document)
 {
     ASSERT(hasTagName(marqueeTag));
 }
@@ -65,7 +68,7 @@ bool HTMLMarqueeElement::isPresentationAttribute(const QualifiedName& name) cons
     return HTMLElement::isPresentationAttribute(name);
 }
 
-void HTMLMarqueeElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStyleProperties& style)
+void HTMLMarqueeElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomString& value, MutableStyleProperties& style)
 {
     if (name == widthAttr) {
         if (!value.isEmpty())
@@ -154,11 +157,6 @@ ExceptionOr<void> HTMLMarqueeElement::setLoop(int loop)
         return Exception { IndexSizeError };
     setIntegralAttribute(loopAttr, loop);
     return { };
-}
-
-bool HTMLMarqueeElement::canSuspendForDocumentSuspension() const
-{
-    return true;
 }
 
 void HTMLMarqueeElement::suspend(ReasonForSuspension)

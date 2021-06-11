@@ -31,6 +31,7 @@
 namespace WebCore {
 
 class DocumentFragment;
+class Range;
 class ReplacementFragment;
 
 class ReplaceSelectionCommand : public CompositeEditCommand {
@@ -45,17 +46,18 @@ public:
         IgnoreMailBlockquote = 1 << 6,
     };
 
-    typedef unsigned CommandOptions;
-
-    static Ref<ReplaceSelectionCommand> create(Document& document, RefPtr<DocumentFragment>&& fragment, CommandOptions options, EditAction editingAction = EditActionInsert)
+    static Ref<ReplaceSelectionCommand> create(Document& document, RefPtr<DocumentFragment>&& fragment, OptionSet<CommandOption> options, EditAction editingAction = EditAction::Insert)
     {
         return adoptRef(*new ReplaceSelectionCommand(document, WTFMove(fragment), options, editingAction));
     }
 
     VisibleSelection visibleSelectionForInsertedText() const { return m_visibleSelectionForInsertedText; }
+    String documentFragmentPlainText() const { return m_documentFragmentPlainText; }
+
+    Optional<SimpleRange> insertedContentRange() const;
 
 private:
-    ReplaceSelectionCommand(Document&, RefPtr<DocumentFragment>&&, CommandOptions, EditAction);
+    ReplaceSelectionCommand(Document&, RefPtr<DocumentFragment>&&, OptionSet<CommandOption>, EditAction);
 
     String inputEventData() const final;
     RefPtr<DataTransfer> inputEventDataTransfer() const final;
@@ -101,6 +103,7 @@ private:
     void removeUnrenderedTextNodesAtEnds(InsertedNodes&);
 
     void removeRedundantStylesAndKeepStyleSpanInline(InsertedNodes&);
+    void inverseTransformColor(InsertedNodes&);
     void makeInsertedContentRoundTrippableWithHTMLTreeBuilder(InsertedNodes&);
     void moveNodeOutOfAncestor(Node&, Node& ancestor, InsertedNodes&);
     void handleStyleSpans(InsertedNodes&);
@@ -110,7 +113,9 @@ private:
     VisiblePosition positionAtEndOfInsertedContent() const;
 
     bool shouldPerformSmartReplace() const;
+    bool shouldPerformSmartParagraphReplace() const;
     void addSpacesForSmartReplace();
+    void addNewLinesForSmartReplace();
     void completeHTMLReplacement(const Position& lastPositionToSelect);
     void mergeTextNodesAroundPosition(Position&, Position& positionOnlyToBeUpdated);
 

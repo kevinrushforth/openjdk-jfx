@@ -28,8 +28,11 @@
 #include "ElementIterator.h"
 #include "HTMLFieldSetElement.h"
 #include "HTMLNames.h"
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(HTMLLegendElement);
 
 inline HTMLLegendElement::HTMLLegendElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
@@ -69,10 +72,11 @@ void HTMLLegendElement::focus(bool restorePreviousSelection, FocusDirection dire
         control->focus(false, direction);
 }
 
-void HTMLLegendElement::accessKeyAction(bool sendMouseEvents)
+bool HTMLLegendElement::accessKeyAction(bool sendMouseEvents)
 {
     if (auto control = associatedControl())
-        control->accessKeyAction(sendMouseEvents);
+        return control->accessKeyAction(sendMouseEvents);
+    return false;
 }
 
 HTMLFormElement* HTMLLegendElement::form() const

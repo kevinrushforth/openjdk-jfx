@@ -33,4 +33,11 @@
     Promise<Response> waitForFetchEventToFinish(FetchEvent event);
     [CallWith=ScriptExecutionContext] FetchEvent createBeingDispatchedFetchEvent();
     [CallWith=ScriptExecutionContext] FetchResponse createOpaqueWithBlobBodyResponse();
+
+    sequence<ByteString> fetchResponseHeaderList(FetchResponse response);
+
+    readonly attribute DOMString processName;
+    readonly attribute boolean isThrottleable;
+
+    readonly attribute long processIdentifier;
 };

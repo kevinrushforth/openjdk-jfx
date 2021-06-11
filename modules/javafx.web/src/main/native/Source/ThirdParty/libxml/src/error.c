@@ -189,7 +189,7 @@ xmlParserPrintFileContextInternal(xmlParserInputPtr input ,
     n = 0;
     /* search backwards for beginning-of-line (to max buff size) */
     while ((n++ < (sizeof(content)-1)) && (cur > base) &&
-           (*(cur) != '\n') && (*(cur) != '\r'))
+       (*(cur) != '\n') && (*(cur) != '\r'))
         cur--;
     if ((*(cur) == '\n') || (*(cur) == '\r')) cur++;
     /* calculate the error position in terms of the current position */
@@ -199,7 +199,7 @@ xmlParserPrintFileContextInternal(xmlParserInputPtr input ,
     ctnt = content;
     /* copy selected text to our buffer */
     while ((*cur != 0) && (*(cur) != '\n') &&
-           (*(cur) != '\r') && (n < sizeof(content)-1)) {
+       (*(cur) != '\r') && (n < sizeof(content)-1)) {
         *ctnt++ = *cur++;
     n++;
     }
@@ -238,7 +238,7 @@ xmlParserPrintFileContext(xmlParserInputPtr input) {
  * @ctx: the parser context or NULL
  * @str: the formatted error message
  *
- * Report an erro with its context, replace the 4 old error/warning
+ * Report an error with its context, replace the 4 old error/warning
  * routines.
  */
 static void
@@ -616,11 +616,11 @@ __xmlRaiseError(xmlStructuredErrorFunc schannel,
         channel = ctxt->sax->error;
     data = ctxt->userData;
     } else if (channel == NULL) {
-        channel = xmlGenericError;
+    channel = xmlGenericError;
     if (ctxt != NULL) {
         data = ctxt;
     } else {
-    data = xmlGenericErrorContext;
+        data = xmlGenericErrorContext;
     }
     }
     if (channel == NULL)
@@ -631,7 +631,7 @@ __xmlRaiseError(xmlStructuredErrorFunc schannel,
     (channel == xmlParserValidityError) ||
     (channel == xmlParserValidityWarning))
     xmlReportError(to, ctxt, str, NULL, NULL);
-    else if ((channel == (xmlGenericErrorFunc) fprintf) ||
+    else if (((void(*)(void)) channel == (void(*)(void)) fprintf) ||
              (channel == xmlGenericErrorDefaultFunc))
     xmlReportError(to, ctxt, str, channel, data);
     else

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014, 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,10 +25,12 @@
 
 #pragma once
 
+#include "CacheableIdentifier.h"
 #include "CallLinkStatus.h"
 #include "ObjectPropertyConditionSet.h"
 #include "PropertyOffset.h"
 #include "StructureSet.h"
+#include <wtf/Box.h>
 
 namespace JSC {
 namespace DOMJIT {
@@ -36,18 +38,20 @@ class GetterSetter;
 }
 
 class CallLinkStatus;
-class GetByIdStatus;
+class GetByStatus;
 struct DumpContext;
 
 class GetByIdVariant {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     GetByIdVariant(
+        CacheableIdentifier,
         const StructureSet& structureSet = StructureSet(), PropertyOffset offset = invalidOffset,
         const ObjectPropertyConditionSet& = ObjectPropertyConditionSet(),
         std::unique_ptr<CallLinkStatus> = nullptr,
         JSFunction* = nullptr,
-        PropertySlot::GetValueFunc = nullptr,
-        std::optional<DOMAttributeAnnotation> = std::nullopt);
+        FunctionPtr<OperationPtrTag> customAccessorGetter = nullptr,
+        std::unique_ptr<DOMAttributeAnnotation> = nullptr);
 
     ~GetByIdVariant();
 
@@ -55,7 +59,7 @@ public:
     GetByIdVariant& operator=(const GetByIdVariant&);
 
     bool isSet() const { return !!m_structureSet.size(); }
-    bool operator!() const { return !isSet(); }
+    explicit operator bool() const { return isSet(); }
     const StructureSet& structureSet() const { return m_structureSet; }
     StructureSet& structureSet() { return m_structureSet; }
 
@@ -66,18 +70,35 @@ public:
     CallLinkStatus* callLinkStatus() const { return m_callLinkStatus.get(); }
     JSFunction* intrinsicFunction() const { return m_intrinsicFunction; }
     Intrinsic intrinsic() const { return m_intrinsicFunction ? m_intrinsicFunction->intrinsic() : NoIntrinsic; }
-    PropertySlot::GetValueFunc customAccessorGetter() const { return m_customAccessorGetter; }
-    std::optional<DOMAttributeAnnotation> domAttribute() const { return m_domAttribute; }
+    FunctionPtr<OperationPtrTag> customAccessorGetter() const { return m_customAccessorGetter; }
+    DOMAttributeAnnotation* domAttribute() const { return m_domAttribute.get(); }
 
     bool isPropertyUnset() const { return offset() == invalidOffset; }
 
     bool attemptToMerge(const GetByIdVariant& other);
 
+    void visitAggregate(SlotVisitor&);
+    void markIfCheap(SlotVisitor&);
+    bool finalize(VM&);
+
     void dump(PrintStream&) const;
     void dumpInContext(PrintStream&, DumpContext*) const;
 
+    CacheableIdentifier identifier() const { return m_identifier; }
+
+    bool overlaps(const GetByIdVariant& other)
+    {
+        if (!!m_identifier != !!other.m_identifier)
+            return true;
+        if (m_identifier) {
+            if (m_identifier != other.m_identifier)
+                return false;
+        }
+        return structureSet().overlaps(other.structureSet());
+    }
+
 private:
-    friend class GetByIdStatus;
+    friend class GetByStatus;
 
     bool canMergeIntrinsicStructures(const GetByIdVariant&) const;
 
@@ -86,8 +107,9 @@ private:
     PropertyOffset m_offset;
     std::unique_ptr<CallLinkStatus> m_callLinkStatus;
     JSFunction* m_intrinsicFunction;
-    PropertySlot::GetValueFunc m_customAccessorGetter;
-    std::optional<DOMAttributeAnnotation> m_domAttribute;
+    FunctionPtr<OperationPtrTag> m_customAccessorGetter;
+    std::unique_ptr<DOMAttributeAnnotation> m_domAttribute;
+    CacheableIdentifier m_identifier;
 };
 
 } // namespace JSC

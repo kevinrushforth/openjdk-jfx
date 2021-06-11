@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -68,7 +68,7 @@ template<typename T> struct PerThreadStorage;
 // For now, we only support PerThread<PerHeapKind<Cache>>. We can expand to other types by
 // using more keys.
 template<> struct PerThreadStorage<PerHeapKind<Cache>> {
-    static const pthread_key_t key = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY0;
+    static constexpr pthread_key_t key = __PTK_FRAMEWORK_JAVASCRIPTCORE_KEY0;
 
     static void* get()
     {

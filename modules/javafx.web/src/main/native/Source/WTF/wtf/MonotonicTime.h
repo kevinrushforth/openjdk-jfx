@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2016-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef WTF_MonotonicTime_h
-#define WTF_MonotonicTime_h
+#pragma once
 
 #include <wtf/ClockType.h>
 #include <wtf/Seconds.h>
@@ -38,19 +37,16 @@ class PrintStream;
 // possibly don't count downtime. This uses floating point internally so that you can reason about
 // infinity and other things that arise in math. It's acceptable to use this to wrap NaN times,
 // negative times, and infinite times, so long as they are all relative to the same clock.
-// Specifically, MonotonicTime should be used in agreement with the principle that
-// MonotonicTime::now().secondsSinceEpoch().value() is the same as
-// WTF::monotonicallyIncreasingTime().
-class MonotonicTime {
+class MonotonicTime final {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
-    static const ClockType clockType = ClockType::Monotonic;
+    static constexpr ClockType clockType = ClockType::Monotonic;
 
     // This is the epoch. So, x.secondsSinceEpoch() should be the same as x - MonotonicTime().
     constexpr MonotonicTime() { }
 
-    // Call this if you know for sure that the double represents time according to
-    // WTF::monotonicallyIncreasingTime(). It must be in seconds and it must be from the same time
-    // source.
+    // Call this if you know for sure that the double represents monotonic time according to the
+    // same time source as MonotonicTime. It must be in seconds.
     static constexpr MonotonicTime fromRawSeconds(double value)
     {
         return MonotonicTime(value);
@@ -141,6 +137,36 @@ public:
     {
         return *this;
     }
+
+    template<class Encoder>
+    void encode(Encoder& encoder) const
+    {
+        encoder << m_value;
+    }
+
+    template<class Decoder>
+    static Optional<MonotonicTime> decode(Decoder& decoder)
+    {
+        Optional<double> time;
+        decoder >> time;
+        if (!time)
+            return WTF::nullopt;
+        return MonotonicTime::fromRawSeconds(*time);
+    }
+
+    template<class Decoder>
+    static WARN_UNUSED_RETURN bool decode(Decoder& decoder, MonotonicTime& time)
+    {
+        double value;
+        if (!decoder.decode(value))
+            return false;
+
+        time = MonotonicTime::fromRawSeconds(value);
+        return true;
+    }
+
+    struct MarkableTraits;
+
 private:
     constexpr MonotonicTime(double rawValue)
         : m_value(rawValue)
@@ -148,6 +174,18 @@ private:
     }
 
     double m_value { 0 };
+};
+
+struct MonotonicTime::MarkableTraits {
+    static bool isEmptyValue(MonotonicTime time)
+    {
+        return std::isnan(time.m_value);
+    }
+
+    static constexpr MonotonicTime emptyValue()
+    {
+        return MonotonicTime::nan();
+    }
 };
 
 } // namespace WTF
@@ -172,5 +210,3 @@ inline bool isfinite(WTF::MonotonicTime time)
 } // namespace std
 
 using WTF::MonotonicTime;
-
-#endif // WTF_MonotonicTime_h

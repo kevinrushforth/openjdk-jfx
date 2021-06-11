@@ -30,6 +30,7 @@
 #include "WasmMemoryMode.h"
 #include "WasmPageCount.h"
 
+#include <wtf/CagedPtr.h>
 #include <wtf/Expected.h>
 #include <wtf/Function.h>
 #include <wtf/RefCounted.h>
@@ -59,8 +60,8 @@ public:
     enum SyncTryToReclaim { SyncTryToReclaimTag };
     enum GrowSuccess { GrowSuccessTag };
 
-    static RefPtr<Memory> create();
-    static RefPtr<Memory> create(PageCount initial, PageCount maximum, WTF::Function<void(NotifyPressure)>&& notifyMemoryPressure, WTF::Function<void(SyncTryToReclaim)>&& syncTryToReclaimMemory, WTF::Function<void(GrowSuccess, PageCount, PageCount)>&& growSuccessCallback);
+    static Ref<Memory> create();
+    static RefPtr<Memory> tryCreate(PageCount initial, PageCount maximum, WTF::Function<void(NotifyPressure)>&& notifyMemoryPressure, WTF::Function<void(SyncTryToReclaim)>&& syncTryToReclaimMemory, WTF::Function<void(GrowSuccess, PageCount, PageCount)>&& growSuccessCallback);
 
     ~Memory();
 
@@ -68,9 +69,8 @@ public:
     static size_t fastMappedBytes(); // Includes redzone.
     static bool addressIsInActiveFastMemory(void*);
 
-    void* memory() const { return m_memory; }
+    void* memory() const { ASSERT(m_memory.getMayBeNull(size()) == m_memory.getUnsafe()); return m_memory.getMayBeNull(size()); }
     size_t size() const { return m_size; }
-    size_t indexingMask() { return m_indexingMask; }
     PageCount sizeInPages() const { return PageCount::fromBytes(m_size); }
 
     PageCount initial() const { return m_initial; }
@@ -92,16 +92,15 @@ public:
 
     static ptrdiff_t offsetOfMemory() { return OBJECT_OFFSETOF(Memory, m_memory); }
     static ptrdiff_t offsetOfSize() { return OBJECT_OFFSETOF(Memory, m_size); }
-    static ptrdiff_t offsetOfIndexingMask() { return OBJECT_OFFSETOF(Memory, m_indexingMask); }
 
 private:
     Memory();
     Memory(void* memory, PageCount initial, PageCount maximum, size_t mappedCapacity, MemoryMode, WTF::Function<void(NotifyPressure)>&& notifyMemoryPressure, WTF::Function<void(SyncTryToReclaim)>&& syncTryToReclaimMemory, WTF::Function<void(GrowSuccess, PageCount, PageCount)>&& growSuccessCallback);
     Memory(PageCount initial, PageCount maximum, WTF::Function<void(NotifyPressure)>&& notifyMemoryPressure, WTF::Function<void(SyncTryToReclaim)>&& syncTryToReclaimMemory, WTF::Function<void(GrowSuccess, PageCount, PageCount)>&& growSuccessCallback);
 
-    void* m_memory { nullptr };
+    using CagedMemory = CagedPtr<Gigacage::Primitive, void, tagCagedPtr>;
+    CagedMemory m_memory;
     size_t m_size { 0 };
-    size_t m_indexingMask { 0 };
     PageCount m_initial;
     PageCount m_maximum;
     size_t m_mappedCapacity { 0 };

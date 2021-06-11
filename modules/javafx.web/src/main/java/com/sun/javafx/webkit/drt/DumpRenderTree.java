@@ -43,7 +43,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.Date;
+import java.util.Map;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.CountDownLatch;
 import javafx.scene.web.WebEngine;
 
@@ -66,13 +69,29 @@ public final class DumpRenderTree {
 
     private final WebPage webPage;
     private final UIClientImpl uiClient;
-    private final EventSender eventSender;
+    private EventSender eventSender;
 
     private CountDownLatch latch;
+    private Timer timer;
     private String testPath;
     private boolean loaded;
     private boolean waiting;
     private boolean complete;
+
+    static class RenderUpdateHelper extends TimerTask {
+        private WebPage webPage;
+
+        public RenderUpdateHelper(WebPage webPage) {
+            this.webPage = webPage;
+        }
+
+        @Override
+        public void run() {
+            Invoker.getInvoker().invokeOnEventThread(() -> {
+                    webPage.forceRepaint();
+            });
+        }
+    };
 
     static class ThemeClientImplStub extends ThemeClient {
         @Override
@@ -137,7 +156,6 @@ public final class DumpRenderTree {
         webPage = new WebPage(new WebPageClientImpl(), uiClient, null, null,
                               new ThemeClientImplStub(), false);
         uiClient.setWebPage(webPage);
-        eventSender = new EventSender(webPage);
 
         webPage.setBounds(0, 0, 800, 600);
         webPage.setDeveloperExtrasEnabled(true);
@@ -153,8 +171,12 @@ public final class DumpRenderTree {
             testString = testString.substring(0, t);
         }
         this.testPath = testString;
-        init(testString, pixelsHash);
+        initTest(testString, pixelsHash);
         return testString;
+    }
+
+    protected String getTestURL() {
+        return testPath;
     }
 
 /*
@@ -177,8 +199,15 @@ public final class DumpRenderTree {
         // initialize default toolkit
         final CountDownLatch latch = new CountDownLatch(1);
         PlatformImpl.startup(() -> {
-            new WebEngine();    // initialize Webkit classes
+            // initialize Webkit classes
+            try {
+                Class.forName(WebEngine.class.getName());
+                Class.forName(WebPage.class.getName());
+            } catch (Exception e) {}
+
             System.loadLibrary("DumpRenderTreeJava");
+            initDRT();
+            new WebEngine();
             drt = new DumpRenderTree();
             PageCache.setCapacity(1);
             latch.countDown();
@@ -189,10 +218,25 @@ public final class DumpRenderTree {
 
     boolean complete() { return this.complete; }
 
-    private void reset() {
-        mlog("reset");
+    private void resetToConsistentStateBeforeTesting(final TestOptions options) {
         // Reset native objects associated with WebPage
         webPage.resetToConsistentStateBeforeTesting();
+
+        // Assign default values for all supported TestOptions
+        webPage.overridePreference("experimental:CSSCustomPropertiesAndValuesEnabled", "false");
+        webPage.overridePreference("enableColorFilter", "false");
+        webPage.overridePreference("enableIntersectionObserver", "false");
+        // Enable features based on TestOption
+        for (Map.Entry<String, String> option : options.getOptions().entrySet()) {
+            webPage.overridePreference(option.getKey(), option.getValue());
+        }
+    }
+
+    private void reset(final TestOptions options) {
+        mlog("reset");
+        // newly create EventSender for each test
+        eventSender = new EventSender(webPage);
+        resetToConsistentStateBeforeTesting(options);
         // Clear frame name
         webPage.reset(webPage.getMainFrame());
         // Reset zoom factors
@@ -215,7 +259,9 @@ public final class DumpRenderTree {
         } catch (MalformedURLException ex) {
             file = "file:///" + file;
         }
-        reset();
+        // parse test options from the html test header
+        final TestOptions options = new TestOptions(file);
+        reset(options);
         webPage.open(mainFrame, file);
         mlog("}runTest");
     }
@@ -225,13 +271,22 @@ public final class DumpRenderTree {
         Invoker.getInvoker().invokeOnEventThread(() -> {
             run(testString, l);
         });
+
+        timer = new Timer();
+        TimerTask task = new RenderUpdateHelper(webPage);
+        timer.schedule(task, 1000/60, 1000/60);
         // wait until test is finished
         l.await();
+        task.cancel();
+        timer.cancel();
+        final CountDownLatch latchForEvents = new CountDownLatch(1);
         Invoker.getInvoker().invokeOnEventThread(() -> {
             mlog("dispose");
             webPage.stop();
             dispose();
+            latchForEvents.countDown();
         });
+        latchForEvents.await();
     }
 
     // called from native
@@ -314,7 +369,8 @@ public final class DumpRenderTree {
         this.latch.countDown();
     }
 
-    private static native void init(String testPath, String pixelsHash);
+    private static native void initDRT();
+    private static native void initTest(String testPath, String pixelsHash);
     private static native void didClearWindowObject(long pContext,
             long pWindowObject, EventSender eventSender);
     private static native void dispose();
@@ -323,6 +379,7 @@ public final class DumpRenderTree {
     private static native boolean dumpChildFramesAsText();
     private static native boolean dumpBackForwardList();
     protected static native boolean shouldStayOnPageAfterHandlingBeforeUnload();
+    protected static native String[] openPanelFiles();
 
     private final class DRTLoadListener implements LoadListenerClient {
         @Override
@@ -543,7 +600,7 @@ public final class DumpRenderTree {
 
         @Override
         public WCRectangle getScreenBounds(boolean available) {
-            return null;
+            return new WCRectangle(0, 0, 800, 600);
         }
 
         @Override
@@ -595,19 +652,16 @@ public final class DumpRenderTree {
                     message = s1 + s2;
                 }
             }
-            if (lineNumber == 0) {
-                out.printf("CONSOLE MESSAGE: %s\n", message);
-            } else {
-                out.printf("CONSOLE MESSAGE: line %d: %s\n",
-                           lineNumber, message);
-            }
+            out.printf("CONSOLE MESSAGE: %s\n", message);
         }
 
         @Override
         public void didClearWindowObject(long context, long windowObject) {
             mlog("didClearWindowObject");
-            DumpRenderTree.didClearWindowObject(context, windowObject,
-                                                eventSender);
+            if (eventSender != null) {
+                DumpRenderTree.didClearWindowObject(context, windowObject,
+                                                    eventSender);
+            }
         }
     }
 }

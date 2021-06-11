@@ -32,7 +32,7 @@ namespace JSC {
 class WeakMapPrototype;
 class GetterSetter;
 
-class WeakMapConstructor : public InternalFunction {
+class WeakMapConstructor final : public InternalFunction {
 public:
     typedef InternalFunction Base;
 
@@ -54,5 +54,6 @@ private:
     WeakMapConstructor(VM&, Structure*);
     void finishCreation(VM&, WeakMapPrototype*);
 };
+STATIC_ASSERT_ISO_SUBSPACE_SHARABLE(WeakMapConstructor, InternalFunction);
 
 } // namespace JSC

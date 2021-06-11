@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,6 +26,7 @@
 #pragma once
 
 #include "JSObject.h"
+#include <wtf/CompactPointerTuple.h>
 #include <wtf/HashMap.h>
 
 namespace JSC {
@@ -34,23 +35,25 @@ class TrackedReferences;
 
 class PropertyCondition {
 public:
-    enum Kind {
+    enum Kind : uint8_t {
         Presence,
         Absence,
         AbsenceOfSetEffect,
-        Equivalence // An adaptive watchpoint on this will be a pair of watchpoints, and when the structure transitions, we will set the replacement watchpoint on the new structure.
+        Equivalence, // An adaptive watchpoint on this will be a pair of watchpoints, and when the structure transitions, we will set the replacement watchpoint on the new structure.
+        CustomFunctionEquivalence, // Custom value or accessor.
+        HasPrototype
     };
 
+    using Header = CompactPointerTuple<UniquedStringImpl*, Kind>;
+
     PropertyCondition()
-        : m_uid(nullptr)
-        , m_kind(Presence)
+        : m_header(nullptr, Presence)
     {
         memset(&u, 0, sizeof(u));
     }
 
     PropertyCondition(WTF::HashTableDeletedValueType)
-        : m_uid(nullptr)
-        , m_kind(Absence)
+        : m_header(nullptr, Absence)
     {
         memset(&u, 0, sizeof(u));
     }
@@ -58,8 +61,7 @@ public:
     static PropertyCondition presenceWithoutBarrier(UniquedStringImpl* uid, PropertyOffset offset, unsigned attributes)
     {
         PropertyCondition result;
-        result.m_uid = uid;
-        result.m_kind = Presence;
+        result.m_header = Header(uid, Presence);
         result.u.presence.offset = offset;
         result.u.presence.attributes = attributes;
         return result;
@@ -75,9 +77,8 @@ public:
     static PropertyCondition absenceWithoutBarrier(UniquedStringImpl* uid, JSObject* prototype)
     {
         PropertyCondition result;
-        result.m_uid = uid;
-        result.m_kind = Absence;
-        result.u.absence.prototype = prototype;
+        result.m_header = Header(uid, Absence);
+        result.u.prototype.prototype = prototype;
         return result;
     }
 
@@ -93,9 +94,8 @@ public:
         UniquedStringImpl* uid, JSObject* prototype)
     {
         PropertyCondition result;
-        result.m_uid = uid;
-        result.m_kind = AbsenceOfSetEffect;
-        result.u.absence.prototype = prototype;
+        result.m_header = Header(uid, AbsenceOfSetEffect);
+        result.u.prototype.prototype = prototype;
         return result;
     }
 
@@ -111,8 +111,7 @@ public:
         UniquedStringImpl* uid, JSValue value)
     {
         PropertyCondition result;
-        result.m_uid = uid;
-        result.m_kind = Equivalence;
+        result.m_header = Header(uid, Equivalence);
         result.u.equivalence.value = JSValue::encode(value);
         return result;
     }
@@ -125,32 +124,58 @@ public:
         return equivalenceWithoutBarrier(uid, value);
     }
 
-    explicit operator bool() const { return m_uid || m_kind != Presence; }
+    static PropertyCondition customFunctionEquivalence(UniquedStringImpl* uid)
+    {
+        PropertyCondition result;
+        result.m_header = Header(uid, CustomFunctionEquivalence);
+        return result;
+    }
 
-    Kind kind() const { return m_kind; }
-    UniquedStringImpl* uid() const { return m_uid; }
+    static PropertyCondition hasPrototypeWithoutBarrier(JSObject* prototype)
+    {
+        PropertyCondition result;
+        result.m_header = Header(nullptr, HasPrototype);
+        result.u.prototype.prototype = prototype;
+        return result;
+    }
 
-    bool hasOffset() const { return !!*this && m_kind == Presence; };
+    static PropertyCondition hasPrototype(VM& vm, JSCell* owner, JSObject* prototype)
+    {
+        if (owner)
+            vm.heap.writeBarrier(owner);
+        return hasPrototypeWithoutBarrier(prototype);
+    }
+
+    explicit operator bool() const { return m_header.pointer() || m_header.type() != Presence; }
+
+    Kind kind() const { return m_header.type(); }
+    UniquedStringImpl* uid() const { return m_header.pointer(); }
+
+    bool hasOffset() const { return !!*this && m_header.type() == Presence; };
     PropertyOffset offset() const
     {
         ASSERT(hasOffset());
         return u.presence.offset;
     }
-    bool hasAttributes() const { return !!*this && m_kind == Presence; };
+    bool hasAttributes() const { return !!*this && m_header.type() == Presence; };
     unsigned attributes() const
     {
         ASSERT(hasAttributes());
         return u.presence.attributes;
     }
 
-    bool hasPrototype() const { return !!*this && (m_kind == Absence || m_kind == AbsenceOfSetEffect); }
+    bool hasPrototype() const
+    {
+        return !!*this
+            && (m_header.type() == Absence || m_header.type() == AbsenceOfSetEffect || m_header.type() == HasPrototype);
+    }
     JSObject* prototype() const
     {
         ASSERT(hasPrototype());
-        return u.absence.prototype;
+        return u.prototype.prototype;
     }
 
-    bool hasRequiredValue() const { return !!*this && m_kind == Equivalence; }
+    bool hasRequiredValue() const { return !!*this && m_header.type() == Equivalence; }
     JSValue requiredValue() const
     {
         ASSERT(hasRequiredValue());
@@ -162,18 +187,21 @@ public:
 
     unsigned hash() const
     {
-        unsigned result = WTF::PtrHash<UniquedStringImpl*>::hash(m_uid) + static_cast<unsigned>(m_kind);
-        switch (m_kind) {
+        unsigned result = WTF::PtrHash<UniquedStringImpl*>::hash(m_header.pointer()) + static_cast<unsigned>(m_header.type());
+        switch (m_header.type()) {
         case Presence:
             result ^= u.presence.offset;
             result ^= u.presence.attributes;
             break;
         case Absence:
         case AbsenceOfSetEffect:
-            result ^= WTF::PtrHash<JSObject*>::hash(u.absence.prototype);
+        case HasPrototype:
+            result ^= WTF::PtrHash<JSObject*>::hash(u.prototype.prototype);
             break;
         case Equivalence:
             result ^= EncodedJSValueHash::hash(u.equivalence.value);
+            break;
+        case CustomFunctionEquivalence:
             break;
         }
         return result;
@@ -181,19 +209,22 @@ public:
 
     bool operator==(const PropertyCondition& other) const
     {
-        if (m_uid != other.m_uid)
+        if (m_header.pointer() != other.m_header.pointer())
             return false;
-        if (m_kind != other.m_kind)
+        if (m_header.type() != other.m_header.type())
             return false;
-        switch (m_kind) {
+        switch (m_header.type()) {
         case Presence:
             return u.presence.offset == other.u.presence.offset
                 && u.presence.attributes == other.u.presence.attributes;
         case Absence:
         case AbsenceOfSetEffect:
-            return u.absence.prototype == other.u.absence.prototype;
+        case HasPrototype:
+            return u.prototype.prototype == other.u.prototype.prototype;
         case Equivalence:
             return u.equivalence.value == other.u.equivalence.value;
+        case CustomFunctionEquivalence:
+            return true;
         }
         RELEASE_ASSERT_NOT_REACHED();
         return false;
@@ -201,7 +232,7 @@ public:
 
     bool isHashTableDeletedValue() const
     {
-        return !m_uid && m_kind == Absence;
+        return !m_header.pointer() && m_header.type() == Absence;
     }
 
     // Two conditions are compatible if they are identical or if they speak of different uids. If
@@ -260,12 +291,12 @@ public:
     // This means that it's still valid and we could enforce validity by setting a transition
     // watchpoint on the structure and possibly an impure property watchpoint.
     bool isWatchableAssumingImpurePropertyWatchpoint(
-        Structure*, JSObject* base = nullptr, WatchabilityEffort = MakeNoChanges) const;
+        Structure*, JSObject* base, WatchabilityEffort = MakeNoChanges) const;
 
     // This means that it's still valid and we could enforce validity by setting a transition
     // watchpoint on the structure.
     bool isWatchable(
-        Structure*, JSObject* base = nullptr, WatchabilityEffort = MakeNoChanges) const;
+        Structure*, JSObject*, WatchabilityEffort = MakeNoChanges) const;
 
     bool watchingRequiresStructureTransitionWatchpoint() const
     {
@@ -274,11 +305,18 @@ public:
     }
     bool watchingRequiresReplacementWatchpoint() const
     {
-        return !!*this && m_kind == Equivalence;
+        return !!*this && m_header.type() == Equivalence;
     }
 
-    // This means that the objects involved in this are still live.
-    bool isStillLive() const;
+    template<typename Functor>
+    void forEachDependentCell(const Functor& functor) const
+    {
+        if (hasPrototype() && prototype())
+            functor(prototype());
+
+        if (hasRequiredValue() && requiredValue() && requiredValue().isCell())
+            functor(requiredValue().asCell());
+    }
 
     void validateReferences(const TrackedReferences&) const;
 
@@ -291,8 +329,7 @@ public:
 private:
     bool isWatchableWhenValid(Structure*, WatchabilityEffort) const;
 
-    UniquedStringImpl* m_uid;
-    Kind m_kind;
+    Header m_header;
     union {
         struct {
             PropertyOffset offset;
@@ -300,7 +337,7 @@ private:
         } presence;
         struct {
             JSObject* prototype;
-        } absence;
+        } prototype;
         struct {
             EncodedJSValue value;
         } equivalence;
@@ -314,7 +351,7 @@ struct PropertyConditionHash {
     {
         return a == b;
     }
-    static const bool safeToCompareToEmptyOrDeleted = true;
+    static constexpr bool safeToCompareToEmptyOrDeleted = true;
 };
 
 } // namespace JSC
@@ -324,9 +361,7 @@ namespace WTF {
 void printInternal(PrintStream&, JSC::PropertyCondition::Kind);
 
 template<typename T> struct DefaultHash;
-template<> struct DefaultHash<JSC::PropertyCondition> {
-    typedef JSC::PropertyConditionHash Hash;
-};
+template<> struct DefaultHash<JSC::PropertyCondition> : JSC::PropertyConditionHash { };
 
 template<typename T> struct HashTraits;
 template<> struct HashTraits<JSC::PropertyCondition> : SimpleClassHashTraits<JSC::PropertyCondition> { };

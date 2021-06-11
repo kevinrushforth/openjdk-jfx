@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -45,6 +46,7 @@ BaseChooserOnlyDateAndTimeInputType::~BaseChooserOnlyDateAndTimeInputType()
 
 void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event&)
 {
+    ASSERT(element());
     if (element()->isDisabledOrReadOnly() || !element()->renderer() || !UserGestureIndicator::processingUserGesture())
         return;
 
@@ -59,23 +61,25 @@ void BaseChooserOnlyDateAndTimeInputType::handleDOMActivateEvent(Event&)
 
 void BaseChooserOnlyDateAndTimeInputType::createShadowSubtree()
 {
-    static NeverDestroyed<AtomicString> valueContainerPseudo("-webkit-date-and-time-value", AtomicString::ConstructFromLiteral);
+    static MainThreadNeverDestroyed<const AtomString> valueContainerPseudo("-webkit-date-and-time-value", AtomString::ConstructFromLiteral);
 
+    ASSERT(element());
     auto valueContainer = HTMLDivElement::create(element()->document());
     valueContainer->setPseudo(valueContainerPseudo);
     element()->userAgentShadowRoot()->appendChild(valueContainer);
-    updateAppearance();
+    updateInnerTextValue();
 }
 
-void BaseChooserOnlyDateAndTimeInputType::updateAppearance()
+void BaseChooserOnlyDateAndTimeInputType::updateInnerTextValue()
 {
+    ASSERT(element());
     RefPtr<Node> node = element()->userAgentShadowRoot()->firstChild();
     if (!is<HTMLElement>(node))
         return;
     String displayValue = visibleValue();
     if (displayValue.isEmpty()) {
         // Need to put something to keep text baseline.
-        displayValue = ASCIILiteral(" ");
+        displayValue = " "_s;
     }
     downcast<HTMLElement>(*node).setInnerText(displayValue);
 }
@@ -84,7 +88,7 @@ void BaseChooserOnlyDateAndTimeInputType::setValue(const String& value, bool val
 {
     BaseDateAndTimeInputType::setValue(value, valueChanged, eventBehavior);
     if (valueChanged)
-        updateAppearance();
+        updateInnerTextValue();
 }
 
 void BaseChooserOnlyDateAndTimeInputType::detach()
@@ -94,6 +98,7 @@ void BaseChooserOnlyDateAndTimeInputType::detach()
 
 void BaseChooserOnlyDateAndTimeInputType::didChooseValue(const String& value)
 {
+    ASSERT(element());
     element()->setValue(value, DispatchInputAndChangeEvent);
 }
 
@@ -108,13 +113,15 @@ void BaseChooserOnlyDateAndTimeInputType::closeDateTimeChooser()
         m_dateTimeChooser->endChooser();
 }
 
-void BaseChooserOnlyDateAndTimeInputType::handleKeydownEvent(KeyboardEvent& event)
+auto BaseChooserOnlyDateAndTimeInputType::handleKeydownEvent(KeyboardEvent& event) -> ShouldCallBaseEventHandler
 {
-    BaseClickableWithKeyInputType::handleKeydownEvent(*element(), event);
+    ASSERT(element());
+    return BaseClickableWithKeyInputType::handleKeydownEvent(*element(), event);
 }
 
 void BaseChooserOnlyDateAndTimeInputType::handleKeypressEvent(KeyboardEvent& event)
 {
+    ASSERT(element());
     BaseClickableWithKeyInputType::handleKeypressEvent(*element(), event);
 }
 
@@ -123,16 +130,30 @@ void BaseChooserOnlyDateAndTimeInputType::handleKeyupEvent(KeyboardEvent& event)
     BaseClickableWithKeyInputType::handleKeyupEvent(*this, event);
 }
 
-void BaseChooserOnlyDateAndTimeInputType::accessKeyAction(bool sendMouseEvents)
+bool BaseChooserOnlyDateAndTimeInputType::accessKeyAction(bool sendMouseEvents)
 {
     BaseDateAndTimeInputType::accessKeyAction(sendMouseEvents);
-    BaseClickableWithKeyInputType::accessKeyAction(*element(), sendMouseEvents);
+    ASSERT(element());
+    return BaseClickableWithKeyInputType::accessKeyAction(*element(), sendMouseEvents);
 }
 
 bool BaseChooserOnlyDateAndTimeInputType::isMouseFocusable() const
 {
+    ASSERT(element());
     return element()->isTextFormControlFocusable();
 }
 
+void BaseChooserOnlyDateAndTimeInputType::attributeChanged(const QualifiedName& name)
+{
+    if (name == valueAttr) {
+        if (auto* element = this->element()) {
+            if (!element->hasDirtyValue())
+                updateInnerTextValue();
+        }
+    }
+    BaseDateAndTimeInputType::attributeChanged(name);
 }
+
+}
+
 #endif

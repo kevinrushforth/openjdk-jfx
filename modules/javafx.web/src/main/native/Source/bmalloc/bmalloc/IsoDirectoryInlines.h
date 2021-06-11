@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -39,22 +39,25 @@ template<typename Config, unsigned passedNumPages>
 IsoDirectory<Config, passedNumPages>::IsoDirectory(IsoHeapImpl<Config>& heap)
     : IsoDirectoryBase<Config>(heap)
 {
-    for (unsigned i = numPages; i--;)
-        m_pages[i] = nullptr;
 }
 
 template<typename Config, unsigned passedNumPages>
-EligibilityResult<Config> IsoDirectory<Config, passedNumPages>::takeFirstEligible()
+EligibilityResult<Config> IsoDirectory<Config, passedNumPages>::takeFirstEligible(const LockHolder&)
 {
-    unsigned pageIndex = (m_eligible | ~m_committed).findBit(m_firstEligible, true);
-    m_firstEligible = pageIndex;
+    unsigned pageIndex = (m_eligible | ~m_committed).findBit(m_firstEligibleOrDecommitted, true);
+    m_firstEligibleOrDecommitted = pageIndex;
+    BASSERT((m_eligible | ~m_committed).findBit(0, true) == pageIndex);
     if (pageIndex >= numPages)
         return EligibilityKind::Full;
 
-    Scavenger& scavenger = *SafePerProcess<Scavenger>::get();
+#if BUSE(PARTIAL_SCAVENGE)
+    m_highWatermark = std::max(pageIndex, m_highWatermark);
+#endif
+
+    Scavenger& scavenger = *Scavenger::get();
     scavenger.didStartGrowing();
 
-    IsoPage<Config>* page = m_pages[pageIndex];
+    IsoPage<Config>* page = m_pages[pageIndex].get();
 
     if (!m_committed[pageIndex]) {
         scavenger.scheduleIfUnderMemoryPressure(IsoPageBase::pageSize);
@@ -73,6 +76,10 @@ EligibilityResult<Config> IsoDirectory<Config, passedNumPages>::takeFirstEligibl
         }
 
         m_committed[pageIndex] = true;
+        this->m_heap.didCommit(page, IsoPageBase::pageSize);
+    } else {
+        if (m_empty[pageIndex])
+            this->m_heap.isNoLongerFreeable(page, IsoPageBase::pageSize);
     }
 
     RELEASE_BASSERT(page);
@@ -84,7 +91,7 @@ EligibilityResult<Config> IsoDirectory<Config, passedNumPages>::takeFirstEligibl
 }
 
 template<typename Config, unsigned passedNumPages>
-void IsoDirectory<Config, passedNumPages>::didBecome(IsoPage<Config>* page, IsoPageTrigger trigger)
+void IsoDirectory<Config, passedNumPages>::didBecome(const LockHolder& locker, IsoPage<Config>* page, IsoPageTrigger trigger)
 {
     static constexpr bool verbose = false;
     unsigned pageIndex = page->index();
@@ -93,14 +100,16 @@ void IsoDirectory<Config, passedNumPages>::didBecome(IsoPage<Config>* page, IsoP
         if (verbose)
             fprintf(stderr, "%p: %p did become eligible.\n", this, page);
         m_eligible[pageIndex] = true;
-        m_firstEligible = std::min(m_firstEligible, pageIndex);
-        this->m_heap.didBecomeEligible(this);
+        m_firstEligibleOrDecommitted = std::min(m_firstEligibleOrDecommitted, pageIndex);
+        this->m_heap.didBecomeEligibleOrDecommited(locker, this);
         return;
     case IsoPageTrigger::Empty:
         if (verbose)
             fprintf(stderr, "%p: %p did become empty.\n", this, page);
+        BASSERT(!!m_committed[pageIndex]);
+        this->m_heap.isNowFreeable(page, IsoPageBase::pageSize);
         m_empty[pageIndex] = true;
-        SafePerProcess<Scavenger>::get()->schedule(IsoPageBase::pageSize);
+        Scavenger::get()->schedule(IsoPageBase::pageSize);
         return;
     }
     BCRASH();
@@ -112,29 +121,56 @@ void IsoDirectory<Config, passedNumPages>::didDecommit(unsigned index)
     // FIXME: We could do this without grabbing the lock. I just doubt that it matters. This is not going
     // to be a frequently executed path, in the sense that decommitting perf will be dominated by the
     // syscall itself (which has to do many hard things).
-    std::lock_guard<Mutex> locker(this->m_heap.lock);
+    LockHolder locker(this->m_heap.lock);
+    BASSERT(!!m_committed[index]);
+    this->m_heap.isNoLongerFreeable(m_pages[index].get(), IsoPageBase::pageSize);
     m_committed[index] = false;
+    m_firstEligibleOrDecommitted = std::min(m_firstEligibleOrDecommitted, index);
+    this->m_heap.didBecomeEligibleOrDecommited(locker, this);
+    this->m_heap.didDecommit(m_pages[index].get(), IsoPageBase::pageSize);
 }
 
 template<typename Config, unsigned passedNumPages>
-void IsoDirectory<Config, passedNumPages>::scavenge(Vector<DeferredDecommit>& decommits)
+void IsoDirectory<Config, passedNumPages>::scavengePage(const LockHolder&, size_t index, Vector<DeferredDecommit>& decommits)
+{
+    // Make sure that this page is now off limits.
+    m_empty[index] = false;
+    m_eligible[index] = false;
+    decommits.push(DeferredDecommit(this, m_pages[index].get(), index));
+}
+
+template<typename Config, unsigned passedNumPages>
+void IsoDirectory<Config, passedNumPages>::scavenge(const LockHolder& locker, Vector<DeferredDecommit>& decommits)
 {
     (m_empty & m_committed).forEachSetBit(
         [&] (size_t index) {
-            // Make sure that this page is now off limits.
-            m_empty[index] = false;
-            m_eligible[index] = false;
-            decommits.push(DeferredDecommit(this, m_pages[index], index));
+            scavengePage(locker, index, decommits);
         });
+#if BUSE(PARTIAL_SCAVENGE)
+    m_highWatermark = 0;
+#endif
 }
+
+#if BUSE(PARTIAL_SCAVENGE)
+template<typename Config, unsigned passedNumPages>
+void IsoDirectory<Config, passedNumPages>::scavengeToHighWatermark(const LockHolder& locker, Vector<DeferredDecommit>& decommits)
+{
+    (m_empty & m_committed).forEachSetBit(
+        [&] (size_t index) {
+            if (index > m_highWatermark)
+                scavengePage(locker, index, decommits);
+        });
+    m_highWatermark = 0;
+}
+#endif
 
 template<typename Config, unsigned passedNumPages>
 template<typename Func>
-void IsoDirectory<Config, passedNumPages>::forEachCommittedPage(const Func& func)
+void IsoDirectory<Config, passedNumPages>::forEachCommittedPage(const LockHolder&, const Func& func)
 {
     m_committed.forEachSetBit(
         [&] (size_t index) {
-            func(*m_pages[index]);
+            func(*(m_pages[index].get()));
         });
 }
 

@@ -35,31 +35,32 @@
 #include "SSLKeyGenerator.h"
 #include "ShadowRoot.h"
 #include "Text.h"
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/StdLibExtras.h>
 
-using namespace WebCore;
-
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(HTMLKeygenElement);
 
 using namespace HTMLNames;
 
 class KeygenSelectElement final : public HTMLSelectElement {
+    WTF_MAKE_ISO_ALLOCATED_INLINE(KeygenSelectElement);
 public:
     static Ref<KeygenSelectElement> create(Document& document)
     {
         return adoptRef(*new KeygenSelectElement(document));
     }
 
-protected:
+private:
     KeygenSelectElement(Document& document)
         : HTMLSelectElement(selectTag, document, 0)
     {
-        static NeverDestroyed<AtomicString> pseudoId("-webkit-keygen-select", AtomicString::ConstructFromLiteral);
+        static MainThreadNeverDestroyed<const AtomString> pseudoId("-webkit-keygen-select", AtomString::ConstructFromLiteral);
         setPseudo(pseudoId);
     }
 
-private:
     Ref<Element> cloneElementWithoutAttributesAndChildren(Document& targetDocument) override
     {
         return create(targetDocument);
@@ -90,7 +91,7 @@ Ref<HTMLKeygenElement> HTMLKeygenElement::create(const QualifiedName& tagName, D
     return adoptRef(*new HTMLKeygenElement(tagName, document, form));
 }
 
-void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void HTMLKeygenElement::parseAttribute(const QualifiedName& name, const AtomString& value)
 {
     // Reflect disabled attribute on the shadow select element
     if (name == disabledAttr)
@@ -105,14 +106,14 @@ bool HTMLKeygenElement::isKeytypeRSA() const
     return keyType.isNull() || equalLettersIgnoringASCIICase(keyType, "rsa");
 }
 
-void HTMLKeygenElement::setKeytype(const AtomicString& value)
+void HTMLKeygenElement::setKeytype(const AtomString& value)
 {
     setAttributeWithoutSynchronization(keytypeAttr, value);
 }
 
 String HTMLKeygenElement::keytype() const
 {
-    return isKeytypeRSA() ? ASCIILiteral("rsa") : emptyString();
+    return isKeytypeRSA() ? "rsa"_s : emptyString();
 }
 
 bool HTMLKeygenElement::appendFormData(DOMFormData& formData, bool)
@@ -120,17 +121,22 @@ bool HTMLKeygenElement::appendFormData(DOMFormData& formData, bool)
     // Only RSA is supported at this time.
     if (!isKeytypeRSA())
         return false;
-    auto value = signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), attributeWithoutSynchronization(challengeAttr), document().baseURL());
+    auto value = document().signedPublicKeyAndChallengeString(shadowSelect()->selectedIndex(), attributeWithoutSynchronization(challengeAttr), document().baseURL());
     if (value.isNull())
         return false;
     formData.append(name(), value);
     return true;
 }
 
-const AtomicString& HTMLKeygenElement::formControlType() const
+const AtomString& HTMLKeygenElement::formControlType() const
 {
-    static NeverDestroyed<const AtomicString> keygen("keygen", AtomicString::ConstructFromLiteral);
+    static MainThreadNeverDestroyed<const AtomString> keygen("keygen", AtomString::ConstructFromLiteral);
     return keygen;
+}
+
+int HTMLKeygenElement::defaultTabIndex() const
+{
+    return 0;
 }
 
 void HTMLKeygenElement::reset()

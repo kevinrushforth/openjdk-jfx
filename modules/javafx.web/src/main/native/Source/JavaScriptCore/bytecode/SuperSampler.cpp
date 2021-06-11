@@ -26,9 +26,7 @@
 #include "config.h"
 #include "SuperSampler.h"
 
-#include "MacroAssembler.h"
 #include "Options.h"
-#include <wtf/CurrentTime.h>
 #include <wtf/DataLog.h>
 #include <wtf/Lock.h>
 #include <wtf/Threading.h>
@@ -36,8 +34,9 @@
 namespace JSC {
 
 volatile uint32_t g_superSamplerCount;
+volatile bool g_superSamplerEnabled;
 
-static StaticLock lock;
+static Lock lock;
 static double in;
 static double out;
 
@@ -49,11 +48,11 @@ void initializeSuperSampler()
     Thread::create(
         "JSC Super Sampler",
         [] () {
-            const int sleepQuantum = 10;
-            const int printingPeriod = 1000;
+            const int sleepQuantum = 3;
+            const int printingPeriod = 3000;
             for (;;) {
                 for (int ms = 0; ms < printingPeriod; ms += sleepQuantum) {
-                    {
+                    if (g_superSamplerEnabled) {
                         LockHolder locker(lock);
                         if (g_superSamplerCount)
                             in++;
@@ -86,6 +85,18 @@ void printSuperSamplerState()
     if (percentage != percentage)
         percentage = 0.0;
     dataLog("Percent time behind super sampler flag: ", percentage, "\n");
+}
+
+void enableSuperSampler()
+{
+    LockHolder locker(lock);
+    g_superSamplerEnabled = true;
+}
+
+void disableSuperSampler()
+{
+    LockHolder locker(lock);
+    g_superSamplerEnabled = false;
 }
 
 } // namespace JSC

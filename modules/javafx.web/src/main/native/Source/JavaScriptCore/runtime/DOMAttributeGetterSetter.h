@@ -39,6 +39,12 @@ class DOMAttributeGetterSetter final : public CustomGetterSetter {
 public:
     using Base = CustomGetterSetter;
 
+    template<typename CellType, SubspaceAccess>
+    static IsoSubspace* subspaceFor(VM& vm)
+    {
+        return &vm.domAttributeGetterSetterSpace;
+    }
+
     static DOMAttributeGetterSetter* create(VM& vm, CustomGetter customGetter, CustomSetter customSetter, DOMAttributeAnnotation domAttribute)
     {
         DOMAttributeGetterSetter* customGetterSetter = new (NotNull, allocateCell<DOMAttributeGetterSetter>(vm.heap)) DOMAttributeGetterSetter(vm, customGetter, customSetter, domAttribute);
@@ -64,10 +70,5 @@ private:
 
     DOMAttributeAnnotation m_domAttribute;
 };
-
-inline bool isDOMAttributeGetterSetter(VM& vm, JSCell* cell)
-{
-    return cell->classInfo(vm) == DOMAttributeGetterSetter::info();
-}
 
 } // namespace JSC

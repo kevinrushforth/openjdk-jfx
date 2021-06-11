@@ -32,13 +32,13 @@
 #if ENABLE(INPUT_TYPE_TIME)
 #include "TimeInputType.h"
 
+#include "Decimal.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "InputTypeNames.h"
-#include <wtf/CurrentTime.h>
+#include "StepRange.h"
 #include <wtf/DateMath.h>
 #include <wtf/MathExtras.h>
-#include <wtf/NeverDestroyed.h>
 
 namespace WebCore {
 
@@ -47,13 +47,14 @@ using namespace HTMLNames;
 static const int timeDefaultStep = 60;
 static const int timeDefaultStepBase = 0;
 static const int timeStepScaleFactor = 1000;
+static const StepRange::StepDescription timeStepDescription { timeDefaultStep, timeDefaultStepBase, timeStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger };
 
 TimeInputType::TimeInputType(HTMLInputElement& element)
     : BaseChooserOnlyDateAndTimeInputType(element)
 {
 }
 
-const AtomicString& TimeInputType::formControlType() const
+const AtomString& TimeInputType::formControlType() const
 {
     return InputTypeNames::time();
 }
@@ -69,35 +70,33 @@ Decimal TimeInputType::defaultValueForStepUp() const
     int offset = calculateLocalTimeOffset(current).offset / msPerMinute;
     current += offset * msPerMinute;
 
-    DateComponents date;
-    date.setMillisecondsSinceMidnight(current);
-    double milliseconds = date.millisecondsSinceEpoch();
+    auto date = DateComponents::fromMillisecondsSinceMidnight(current);
+    if (!date)
+        return  { };
+
+    double milliseconds = date->millisecondsSinceEpoch();
     ASSERT(std::isfinite(milliseconds));
     return Decimal::fromDouble(milliseconds);
 }
 
 StepRange TimeInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
-    static NeverDestroyed<const StepRange::StepDescription> stepDescription(timeDefaultStep, timeDefaultStepBase, timeStepScaleFactor, StepRange::ScaledStepValueShouldBeInteger);
-
+    ASSERT(element());
     const Decimal stepBase = parseToNumber(element()->attributeWithoutSynchronization(minAttr), 0);
     const Decimal minimum = parseToNumber(element()->attributeWithoutSynchronization(minAttr), Decimal::fromDouble(DateComponents::minimumTime()));
     const Decimal maximum = parseToNumber(element()->attributeWithoutSynchronization(maxAttr), Decimal::fromDouble(DateComponents::maximumTime()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->attributeWithoutSynchronization(stepAttr));
-    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, stepDescription);
+    const Decimal step = StepRange::parseStep(anyStepHandling, timeStepDescription, element()->attributeWithoutSynchronization(stepAttr));
+    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, timeStepDescription);
 }
 
-bool TimeInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+Optional<DateComponents> TimeInputType::parseToDateComponents(const StringView& source) const
 {
-    ASSERT(out);
-    unsigned end;
-    return out->parseTime(characters, length, 0, end) && end == length;
+    return DateComponents::fromParsingTime(source);
 }
 
-bool TimeInputType::setMillisecondToDateComponents(double value, DateComponents* date) const
+Optional<DateComponents> TimeInputType::setMillisecondToDateComponents(double value) const
 {
-    ASSERT(date);
-    return date->setMillisecondsSinceMidnight(value);
+    return DateComponents::fromMillisecondsSinceMidnight(value);
 }
 
 bool TimeInputType::isTimeField() const

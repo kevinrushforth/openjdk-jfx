@@ -32,7 +32,7 @@ namespace JSC {
 class WeakSetPrototype;
 class GetterSetter;
 
-class WeakSetConstructor : public InternalFunction {
+class WeakSetConstructor final : public InternalFunction {
 public:
     typedef InternalFunction Base;
 
@@ -54,5 +54,6 @@ private:
     WeakSetConstructor(VM&, Structure*);
     void finishCreation(VM&, WeakSetPrototype*);
 };
+STATIC_ASSERT_ISO_SUBSPACE_SHARABLE(WeakSetConstructor, InternalFunction);
 
 } // namespace JSC

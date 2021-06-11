@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,23 +23,34 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+typedef USVString CSSOMString;
+
 [
     EnabledAtRuntime=WebAnimations,
-    ConstructorMayThrowException,
-    ConstructorCallWith=ScriptState,
-    Constructor(Element? target, object? keyframes, optional (unrestricted double or KeyframeEffectOptions) options)
+    Exposed=Window,
+    JSGenerateToNativeObject,
 ] interface KeyframeEffect : AnimationEffect {
-    readonly attribute Element? target;
-    attribute IterationCompositeOperation iterationComposite;
-    attribute CompositeOperation composite;
-    [CallWith=ScriptState] sequence<object> getKeyframes();
-    [MayThrowException, CallWith=ScriptState] void setKeyframes(object? keyframes);
+    [CallWith=GlobalObject, MayThrowException] constructor(Element? target, object? keyframes, optional (unrestricted double or KeyframeEffectOptions) options);
+    [CallWith=GlobalObject, MayThrowException] constructor(KeyframeEffect source);
+
+    attribute Element? target;
+    [MayThrowException] attribute CSSOMString? pseudoElement;
+    [EnabledAtRuntime=WebAnimationsCompositeOperations] attribute IterationCompositeOperation iterationComposite;
+    [EnabledAtRuntime=WebAnimationsCompositeOperations] attribute CompositeOperation composite;
+    [CallWith=GlobalObject, ImplementedAs=getBindingsKeyframes] sequence<object> getKeyframes();
+    [MayThrowException, CallWith=GlobalObject, ImplementedAs=setBindingsKeyframes] void setKeyframes(object? keyframes);
 };
 
 dictionary BasePropertyIndexedKeyframe {
     (sequence<double?> or double?) offset = [];
     (sequence<DOMString> or DOMString) easing = [];
-    (sequence<CompositeOperation> or CompositeOperation) composite = [];
+    (sequence<CompositeOperationOrAuto> or CompositeOperationOrAuto) composite = [];
+};
+
+dictionary BaseKeyframe {
+    double? offset = null;
+    DOMString easing = "linear";
+    CompositeOperationOrAuto composite = "auto";
 };
 
 [
@@ -48,5 +59,5 @@ dictionary BasePropertyIndexedKeyframe {
      double? offset = null;
      double computedOffset;
      DOMString easing = "linear";
-     CompositeOperation? composite = null;
+     CompositeOperationOrAuto composite = "auto";
 };

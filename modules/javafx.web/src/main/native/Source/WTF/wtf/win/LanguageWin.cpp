@@ -24,27 +24,28 @@
  */
 
 #include "config.h"
-#include "Language.h"
+#include <wtf/Language.h>
 
 #include <mutex>
 #include <windows.h>
 #include <wtf/Lock.h>
 #include <wtf/Vector.h>
 #include <wtf/text/WTFString.h>
+#include <wtf/text/win/WCharStringExtras.h>
 
 namespace WTF {
 
-static StaticLock platformLanguageMutex;
+static Lock platformLanguageMutex;
 
 static String localeInfo(LCTYPE localeType, const String& fallback)
 {
     LANGID langID = GetUserDefaultUILanguage();
-    int localeChars = GetLocaleInfo(langID, localeType, 0, 0);
+    int localeChars = GetLocaleInfo(langID, localeType, nullptr, 0);
     if (!localeChars)
         return fallback;
     UChar* localeNameBuf;
     String localeName = String::createUninitialized(localeChars, localeNameBuf);
-    localeChars = GetLocaleInfo(langID, localeType, localeNameBuf, localeChars);
+    localeChars = GetLocaleInfo(langID, localeType, wcharFrom(localeNameBuf), localeChars);
     if (!localeChars)
         return fallback;
     if (localeName.isEmpty())
@@ -56,7 +57,7 @@ static String localeInfo(LCTYPE localeType, const String& fallback)
 
 static String platformLanguage()
 {
-    std::lock_guard<StaticLock> lock(platformLanguageMutex);
+    auto locker = holdLock(platformLanguageMutex);
 
     static String computedDefaultLanguage;
     if (!computedDefaultLanguage.isEmpty())

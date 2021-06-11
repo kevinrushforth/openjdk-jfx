@@ -207,81 +207,100 @@ Value* Const32Value::iToFConstant(Procedure& proc) const
 TriState Const32Value::equalConstant(const Value* other) const
 {
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value == other->asInt32());
 }
 
 TriState Const32Value::notEqualConstant(const Value* other) const
 {
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value != other->asInt32());
 }
 
 TriState Const32Value::lessThanConstant(const Value* other) const
 {
+    // INT32_MAX < x is always false.
+    if (static_cast<int32_t>(m_value) == std::numeric_limits<int32_t>::max())
+        return TriState::False;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value < other->asInt32());
 }
 
 TriState Const32Value::greaterThanConstant(const Value* other) const
 {
+    // INT32_MIN > x is always false.
+    if (static_cast<int32_t>(m_value) == std::numeric_limits<int32_t>::min())
+        return TriState::False;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value > other->asInt32());
 }
 
 TriState Const32Value::lessEqualConstant(const Value* other) const
 {
+    // INT32_MIN <= x is always true.
+    if (static_cast<int32_t>(m_value) == std::numeric_limits<int32_t>::min())
+        return TriState::True;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value <= other->asInt32());
 }
 
 TriState Const32Value::greaterEqualConstant(const Value* other) const
 {
+    // INT32_MAX >= x is always true.
+    if (static_cast<int32_t>(m_value) == std::numeric_limits<int32_t>::max())
+        return TriState::True;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(m_value >= other->asInt32());
 }
 
 TriState Const32Value::aboveConstant(const Value* other) const
 {
+    // UINT32_MIN > x is always false.
+    if (static_cast<uint32_t>(m_value) == std::numeric_limits<uint32_t>::min())
+        return TriState::False;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(static_cast<uint32_t>(m_value) > static_cast<uint32_t>(other->asInt32()));
 }
 
 TriState Const32Value::belowConstant(const Value* other) const
 {
+    // UINT32_MAX < x is always false.
+    if (static_cast<uint32_t>(m_value) == std::numeric_limits<uint32_t>::max())
+        return TriState::False;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(static_cast<uint32_t>(m_value) < static_cast<uint32_t>(other->asInt32()));
 }
 
 TriState Const32Value::aboveEqualConstant(const Value* other) const
 {
+    // UINT32_MAX >= x is always true.
+    if (static_cast<uint32_t>(m_value) == std::numeric_limits<uint32_t>::max())
+        return TriState::True;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(static_cast<uint32_t>(m_value) >= static_cast<uint32_t>(other->asInt32()));
 }
 
 TriState Const32Value::belowEqualConstant(const Value* other) const
 {
+    // UINT32_MIN <= x is always true.
+    if (static_cast<uint32_t>(m_value) == std::numeric_limits<uint32_t>::min())
+        return TriState::True;
     if (!other->hasInt32())
-        return MixedTriState;
+        return TriState::Indeterminate;
     return triState(static_cast<uint32_t>(m_value) <= static_cast<uint32_t>(other->asInt32()));
 }
 
 void Const32Value::dumpMeta(CommaPrinter& comma, PrintStream& out) const
 {
     out.print(comma, m_value);
-}
-
-Value* Const32Value::cloneImpl() const
-{
-    return new Const32Value(*this);
 }
 
 } } // namespace JSC::B3

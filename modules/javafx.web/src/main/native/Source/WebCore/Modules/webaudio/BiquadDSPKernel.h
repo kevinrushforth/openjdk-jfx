@@ -34,7 +34,7 @@ class BiquadProcessor;
 
 // BiquadDSPKernel is an AudioDSPKernel and is responsible for filtering one channel of a BiquadProcessor using a Biquad object.
 
-class BiquadDSPKernel : public AudioDSPKernel {
+class BiquadDSPKernel final : public AudioDSPKernel {
 public:
     explicit BiquadDSPKernel(BiquadProcessor* processor)
     : AudioDSPKernel(processor)
@@ -55,7 +55,7 @@ public:
     double tailTime() const override;
     double latencyTime() const override;
 
-protected:
+private:
     Biquad m_biquad;
     BiquadProcessor* biquadProcessor() { return static_cast<BiquadProcessor*>(processor()); }
 

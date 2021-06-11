@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2017-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,22 +35,20 @@ class ProxyableAccessCase : public AccessCase {
 public:
     using Base = AccessCase;
 
-    bool viaProxy() const override { return m_viaProxy; }
     WatchpointSet* additionalSet() const override { return m_additionalSet.get(); }
 
-    static std::unique_ptr<AccessCase> create(VM&, JSCell*, AccessType, PropertyOffset, Structure*, const ObjectPropertyConditionSet& = ObjectPropertyConditionSet(),
+    static std::unique_ptr<AccessCase> create(VM&, JSCell*, AccessType, CacheableIdentifier, PropertyOffset, Structure*, const ObjectPropertyConditionSet& = ObjectPropertyConditionSet(),
         bool viaProxy = false, WatchpointSet* additionalSet = nullptr, std::unique_ptr<PolyProtoAccessChain> = nullptr);
 
     void dumpImpl(PrintStream&, CommaPrinter&) const override;
     std::unique_ptr<AccessCase> clone() const override;
 
-    ~ProxyableAccessCase();
+    ~ProxyableAccessCase() override;
 
 protected:
-    ProxyableAccessCase(VM&, JSCell*, AccessType, PropertyOffset, Structure*, const ObjectPropertyConditionSet&, bool viaProxy, WatchpointSet* additionalSet, std::unique_ptr<PolyProtoAccessChain>);
+    ProxyableAccessCase(VM&, JSCell*, AccessType, CacheableIdentifier, PropertyOffset, Structure*, const ObjectPropertyConditionSet&, bool viaProxy, WatchpointSet* additionalSet, std::unique_ptr<PolyProtoAccessChain>);
 
 private:
-    bool m_viaProxy;
     RefPtr<WatchpointSet> m_additionalSet;
 };
 

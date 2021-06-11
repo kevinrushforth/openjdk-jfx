@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,16 +28,15 @@
 
 #if ENABLE(DFG_JIT)
 
-#include "DFGBasicBlockInlines.h"
 #include "DFGGraph.h"
 #include "DFGInsertionSet.h"
 #include "DFGPhase.h"
-#include "JSCInlines.h"
+#include "JSCJSValueInlines.h"
 
 namespace JSC { namespace DFG {
 
 class SSALoweringPhase : public Phase {
-    static const bool verbose = false;
+    static constexpr bool verbose = false;
 
 public:
     SSALoweringPhase(Graph& graph)
@@ -83,30 +82,6 @@ private:
 
         case GetByVal: {
             lowerBoundsCheck(m_graph.varArgChild(m_node, 0), m_graph.varArgChild(m_node, 1), m_graph.varArgChild(m_node, 2));
-            auto insertGetMask = [&] () {
-                Node* mask = m_insertionSet.insertNode(
-                    m_nodeIndex, SpecInt32Only, GetArrayMask,
-                    m_node->origin, Edge(m_graph.varArgChild(m_node, 0).node(), ObjectUse));
-                m_graph.varArgChild(m_node, 3) = Edge(mask, Int32Use);
-            };
-            auto arrayMode = m_node->arrayMode();
-            switch (arrayMode.type()) {
-            case Array::Int32:
-            case Array::Contiguous:
-            case Array::Double:
-            case Array::ArrayStorage:
-            case Array::SlowPutArrayStorage:
-                // FIXME: Also support this in the DFG:
-                // https://bugs.webkit.org/show_bug.cgi?id=182711
-                insertGetMask();
-                break;
-            default:
-                // FIXME: Pass in GetArrayLength on GetByVal's over Scoped/Direct Arguments.
-                // https://bugs.webkit.org/show_bug.cgi?id=182714
-                if (arrayMode.isSomeTypedArrayView())
-                    insertGetMask();
-                break;
-            }
             break;
         }
 
@@ -148,16 +123,25 @@ private:
         case Array::SlowPutArrayStorage:
             op = GetVectorLength;
             break;
+        case Array::String:
+            // When we need to support this, it will require additional code since base's useKind is KnownStringUse.
+            DFG_CRASH(m_graph, m_node, "Array::String's base.useKind() is KnownStringUse");
+            break;
         default:
             break;
         }
 
         Node* length = m_insertionSet.insertNode(
             m_nodeIndex, SpecInt32Only, op, m_node->origin,
-            OpInfo(m_node->arrayMode().asWord()), base, storage);
-        m_insertionSet.insertNode(
+            OpInfo(m_node->arrayMode().asWord()), Edge(base.node(), KnownCellUse), storage);
+        Node* checkInBounds = m_insertionSet.insertNode(
             m_nodeIndex, SpecInt32Only, CheckInBounds, m_node->origin,
             index, Edge(length, KnownInt32Use));
+
+        AdjacencyList adjacencyList = m_graph.copyVarargChildren(m_node);
+        m_graph.m_varArgChildren.append(Edge(checkInBounds, UntypedUse));
+        adjacencyList.setNumChildren(adjacencyList.numChildren() + 1);
+        m_node->children = adjacencyList;
         return true;
     }
 

@@ -29,35 +29,37 @@
 
 namespace JSC {
 
-class CompleteSubspace : public Subspace {
+class CompleteSubspace final : public Subspace {
 public:
     JS_EXPORT_PRIVATE CompleteSubspace(CString name, Heap&, HeapCellType*, AlignedMemoryAllocator*);
-    JS_EXPORT_PRIVATE ~CompleteSubspace();
+    JS_EXPORT_PRIVATE ~CompleteSubspace() final;
 
     // In some code paths, we need it to be a compile error to call the virtual version of one of
     // these functions. That's why we do final methods the old school way.
 
     // FIXME: Currently subspaces speak of BlockDirectories as "allocators", but that's temporary.
     // https://bugs.webkit.org/show_bug.cgi?id=181559
-    Allocator allocatorFor(size_t, AllocatorForMode) override;
+    Allocator allocatorFor(size_t, AllocatorForMode) final;
     Allocator allocatorForNonVirtual(size_t, AllocatorForMode);
 
-    void* allocate(VM&, size_t, GCDeferralContext*, AllocationFailureMode) override;
-    JS_EXPORT_PRIVATE void* allocateNonVirtual(VM&, size_t, GCDeferralContext*, AllocationFailureMode);
+    void* allocate(VM&, size_t, GCDeferralContext*, AllocationFailureMode) final;
+    void* allocateNonVirtual(VM&, size_t, GCDeferralContext*, AllocationFailureMode);
+    void* reallocatePreciseAllocationNonVirtual(VM&, HeapCell*, size_t, GCDeferralContext*, AllocationFailureMode);
 
     static ptrdiff_t offsetOfAllocatorForSizeStep() { return OBJECT_OFFSETOF(CompleteSubspace, m_allocatorForSizeStep); }
 
     Allocator* allocatorForSizeStep() { return &m_allocatorForSizeStep[0]; }
 
 private:
-    Allocator allocatorForSlow(size_t);
+    JS_EXPORT_PRIVATE Allocator allocatorForSlow(size_t);
 
     // These slow paths are concerned with large allocations and allocator creation.
-    void* allocateSlow(VM&, size_t, GCDeferralContext*, AllocationFailureMode);
+    JS_EXPORT_PRIVATE void* allocateSlow(VM&, size_t, GCDeferralContext*, AllocationFailureMode);
     void* tryAllocateSlow(VM&, size_t, GCDeferralContext*);
 
     std::array<Allocator, MarkedSpace::numSizeClasses> m_allocatorForSizeStep;
     Vector<std::unique_ptr<BlockDirectory>> m_directories;
+    Vector<std::unique_ptr<LocalAllocator>> m_localAllocators;
 };
 
 ALWAYS_INLINE Allocator CompleteSubspace::allocatorForNonVirtual(size_t size, AllocatorForMode mode)

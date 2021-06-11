@@ -27,7 +27,7 @@
 
 #if ENABLE(SERVICE_WORKER)
 
-#include "JSDOMPromiseDeferred.h"
+#include "IDLTypes.h"
 #include "ServiceWorkerIdentifier.h"
 #include <wtf/RefCounted.h>
 
@@ -37,7 +37,9 @@ class FetchEvent;
 class FetchResponse;
 class ScriptExecutionContext;
 
-class WEBCORE_EXPORT ServiceWorkerInternals : public RefCounted<ServiceWorkerInternals> {
+template<typename IDLType> class DOMPromiseDeferred;
+
+class WEBCORE_TESTSUPPORT_EXPORT ServiceWorkerInternals : public RefCounted<ServiceWorkerInternals> {
 public:
     static Ref<ServiceWorkerInternals> create(ServiceWorkerIdentifier identifier) { return adoptRef(*new ServiceWorkerInternals { identifier }); }
     ~ServiceWorkerInternals();
@@ -46,6 +48,14 @@ public:
     void waitForFetchEventToFinish(FetchEvent&, DOMPromiseDeferred<IDLInterface<FetchResponse>>&&);
     Ref<FetchEvent> createBeingDispatchedFetchEvent(ScriptExecutionContext&);
     Ref<FetchResponse> createOpaqueWithBlobBodyResponse(ScriptExecutionContext&);
+
+    Vector<String> fetchResponseHeaderList(FetchResponse&);
+
+    String processName() const;
+
+    bool isThrottleable() const;
+
+    int processIdentifier() const;
 
 private:
     explicit ServiceWorkerInternals(ServiceWorkerIdentifier);

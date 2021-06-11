@@ -28,6 +28,7 @@ import com.sun.javafx.scene.control.VirtualScrollBar;
 import javafx.collections.ObservableList;
 import javafx.scene.Node;
 import javafx.scene.control.IndexedCell;
+import javafx.scene.control.ScrollBar;
 import javafx.scene.layout.StackPane;
 
 public class VirtualFlowShim<T extends IndexedCell> extends VirtualFlow<T> {
@@ -51,6 +52,11 @@ public class VirtualFlowShim<T extends IndexedCell> extends VirtualFlow<T> {
     }
 
     @Override
+    public double getCellPosition(T cell) {
+        return super.getCellPosition(cell);
+    }
+
+    @Override
     public void recreateCells() {
         super.recreateCells();
     }
@@ -59,11 +65,11 @@ public class VirtualFlowShim<T extends IndexedCell> extends VirtualFlow<T> {
         return super.getMaxPrefBreadth();
     }
 
-    public VirtualScrollBar shim_getHbar() {
+    public ScrollBar shim_getHbar() {
         return super.getHbar();
     }
 
-    public VirtualScrollBar shim_getVbar() {
+    public ScrollBar shim_getVbar() {
         return super.getVbar();
     }
 

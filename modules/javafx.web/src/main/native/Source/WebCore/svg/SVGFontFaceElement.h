@@ -31,6 +31,7 @@ class SVGFontElement;
 class StyleRuleFontFace;
 
 class SVGFontFaceElement final : public SVGElement {
+    WTF_MAKE_ISO_ALLOCATED(SVGFontFaceElement);
 public:
     static Ref<SVGFontFaceElement> create(const QualifiedName&, Document&);
 
@@ -54,8 +55,9 @@ public:
 
 private:
     SVGFontFaceElement(const QualifiedName&, Document&);
+    ~SVGFontFaceElement();
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
 
     void childrenChanged(const ChildChange&) final;
     InsertedIntoAncestorResult insertedIntoAncestor(InsertionType, ContainerNode&) final;

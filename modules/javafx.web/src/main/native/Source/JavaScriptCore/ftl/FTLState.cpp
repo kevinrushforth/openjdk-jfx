@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013, 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,12 +28,10 @@
 
 #if ENABLE(FTL_JIT)
 
-#include "CodeBlockWithJITType.h"
 #include "FTLForOSREntryJITCode.h"
 #include "FTLJITCode.h"
 #include "FTLJITFinalizer.h"
 #include "FTLPatchpointExceptionHandle.h"
-#include <stdio.h>
 
 namespace JSC { namespace FTL {
 
@@ -42,17 +40,16 @@ using namespace DFG;
 
 State::State(Graph& graph)
     : graph(graph)
-    , generatedFunction(0)
 {
-    switch (graph.m_plan.mode) {
+    switch (graph.m_plan.mode()) {
     case FTLMode: {
         jitCode = adoptRef(new JITCode());
         break;
     }
     case FTLForOSREntryMode: {
         RefPtr<ForOSREntryJITCode> code = adoptRef(new ForOSREntryJITCode());
-        code->initializeEntryBuffer(graph.m_vm, graph.m_profiledBlock->m_numCalleeLocals);
-        code->setBytecodeIndex(graph.m_plan.osrEntryBytecodeIndex);
+        code->initializeEntryBuffer(graph.m_vm, graph.m_profiledBlock->numCalleeLocals());
+        code->setBytecodeIndex(graph.m_plan.osrEntryBytecodeIndex());
         jitCode = code;
         break;
     }
@@ -61,14 +58,14 @@ State::State(Graph& graph)
         break;
     }
 
-    graph.m_plan.finalizer = std::make_unique<JITFinalizer>(graph.m_plan);
-    finalizer = static_cast<JITFinalizer*>(graph.m_plan.finalizer.get());
+    graph.m_plan.setFinalizer(makeUnique<JITFinalizer>(graph.m_plan));
+    finalizer = static_cast<JITFinalizer*>(graph.m_plan.finalizer());
 
-    proc = std::make_unique<Procedure>();
+    proc = makeUnique<Procedure>();
 
     proc->setOriginPrinter(
         [] (PrintStream& out, B3::Origin origin) {
-            out.print("DFG:", bitwise_cast<Node*>(origin.data()));
+            out.print(bitwise_cast<Node*>(origin.data()));
         });
 
     proc->setFrontendData(&graph);

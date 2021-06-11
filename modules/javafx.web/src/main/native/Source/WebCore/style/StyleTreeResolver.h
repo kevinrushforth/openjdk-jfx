@@ -40,10 +40,12 @@ class Element;
 class Node;
 class RenderStyle;
 class ShadowRoot;
-class StyleResolver;
 
 namespace Style {
 
+class Resolver;
+
+DECLARE_ALLOCATOR_WITH_HEAP_IDENTIFIER(TreeResolverScope);
 class TreeResolver {
 public:
     TreeResolver(Document&);
@@ -62,7 +64,8 @@ private:
     ElementUpdate resolvePseudoStyle(Element&, const ElementUpdate&, PseudoId);
 
     struct Scope : RefCounted<Scope> {
-        StyleResolver& styleResolver;
+        WTF_MAKE_STRUCT_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(TreeResolverScope);
+        Resolver& resolver;
         SelectorFilter selectorFilter;
         SharingResolver sharingResolver;
         ShadowRoot* shadowRoot { nullptr };
@@ -96,6 +99,7 @@ private:
     void popParentsToDepth(unsigned depth);
 
     const RenderStyle* parentBoxStyle() const;
+    const RenderStyle* parentBoxStyleForPseudo(const ElementUpdate&) const;
 
     Document& m_document;
     std::unique_ptr<RenderStyle> m_documentElementStyle;
@@ -112,8 +116,11 @@ bool postResolutionCallbacksAreSuspended();
 
 class PostResolutionCallbackDisabler {
 public:
-    explicit PostResolutionCallbackDisabler(Document&);
+    enum class DrainCallbacks { Yes, No };
+    explicit PostResolutionCallbackDisabler(Document&, DrainCallbacks = DrainCallbacks::Yes);
     ~PostResolutionCallbackDisabler();
+private:
+    DrainCallbacks m_drainCallbacks;
 };
 
 }

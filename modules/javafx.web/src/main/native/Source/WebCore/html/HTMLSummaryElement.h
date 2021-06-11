@@ -27,6 +27,7 @@ namespace WebCore {
 class HTMLDetailsElement;
 
 class HTMLSummaryElement final : public HTMLElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLSummaryElement);
 public:
     static Ref<HTMLSummaryElement> create(const QualifiedName&, Document&);
 
@@ -45,6 +46,7 @@ private:
 
     RefPtr<HTMLDetailsElement> detailsElement() const;
 
+    int defaultTabIndex() const final;
     bool supportsFocus() const final;
 };
 

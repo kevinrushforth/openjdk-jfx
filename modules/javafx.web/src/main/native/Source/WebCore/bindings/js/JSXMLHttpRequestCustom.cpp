@@ -43,17 +43,17 @@ using namespace JSC;
 
 void JSXMLHttpRequest::visitAdditionalChildren(SlotVisitor& visitor)
 {
-    if (XMLHttpRequestUpload* upload = wrapped().optionalUpload())
+    if (auto* upload = wrapped().optionalUpload())
         visitor.addOpaqueRoot(upload);
 
-    if (Document* responseDocument = wrapped().optionalResponseXML())
+    if (auto* responseDocument = wrapped().optionalResponseXML())
         visitor.addOpaqueRoot(responseDocument);
 }
 
-JSValue JSXMLHttpRequest::response(ExecState& state) const
+JSValue JSXMLHttpRequest::response(JSGlobalObject& lexicalGlobalObject) const
 {
     auto cacheResult = [&] (JSValue value) -> JSValue {
-        m_response.set(state.vm(), this, value);
+        m_response.set(lexicalGlobalObject.vm(), this, value);
         return value;
     };
 
@@ -66,8 +66,8 @@ JSValue JSXMLHttpRequest::response(ExecState& state) const
     switch (type) {
     case XMLHttpRequest::ResponseType::EmptyString:
     case XMLHttpRequest::ResponseType::Text: {
-        auto scope = DECLARE_THROW_SCOPE(state.vm());
-        return cacheResult(toJS<IDLNullable<IDLUSVString>>(state, scope, wrapped().responseText()));
+        auto scope = DECLARE_THROW_SCOPE(lexicalGlobalObject.vm());
+        return cacheResult(toJS<IDLNullable<IDLUSVString>>(lexicalGlobalObject, scope, wrapped().responseText()));
     }
     default:
         break;
@@ -84,7 +84,7 @@ JSValue JSXMLHttpRequest::response(ExecState& state) const
         return jsUndefined();
 
     case XMLHttpRequest::ResponseType::Json:
-        value = toJS<IDLJSON>(state, wrapped().responseTextIgnoringResponseType());
+        value = toJS<IDLJSON>(*globalObject(), wrapped().responseTextIgnoringResponseType());
         if (!value)
             value = jsNull();
         break;
@@ -92,16 +92,16 @@ JSValue JSXMLHttpRequest::response(ExecState& state) const
     case XMLHttpRequest::ResponseType::Document: {
         auto document = wrapped().responseXML();
         ASSERT(!document.hasException());
-        value = toJS<IDLInterface<Document>>(state, *globalObject(), document.releaseReturnValue());
+        value = toJS<IDLInterface<Document>>(lexicalGlobalObject, *globalObject(), document.releaseReturnValue());
         break;
     }
 
     case XMLHttpRequest::ResponseType::Blob:
-        value = toJSNewlyCreated<IDLInterface<Blob>>(state, *globalObject(), wrapped().createResponseBlob());
+        value = toJSNewlyCreated<IDLInterface<Blob>>(lexicalGlobalObject, *globalObject(), wrapped().createResponseBlob());
         break;
 
     case XMLHttpRequest::ResponseType::Arraybuffer:
-        value = toJS<IDLInterface<ArrayBuffer>>(state, *globalObject(), wrapped().createResponseArrayBuffer());
+        value = toJS<IDLInterface<ArrayBuffer>>(lexicalGlobalObject, *globalObject(), wrapped().createResponseArrayBuffer());
         break;
     }
 

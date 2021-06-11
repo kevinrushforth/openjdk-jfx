@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,7 +29,6 @@
 #if ENABLE(FTL_JIT)
 
 #include "DFGFailedFinalizer.h"
-#include "FTLJITCode.h"
 
 namespace JSC { namespace FTL {
 
@@ -37,7 +36,7 @@ using namespace DFG;
 
 void fail(State& state)
 {
-    state.graph.m_plan.finalizer = std::make_unique<FailedFinalizer>(state.graph.m_plan);
+    state.graph.m_plan.setFinalizer(makeUnique<FailedFinalizer>(state.graph.m_plan));
 }
 
 } } // namespace JSC::FTL

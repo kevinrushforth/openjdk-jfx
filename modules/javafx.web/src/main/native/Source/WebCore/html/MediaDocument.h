@@ -32,6 +32,7 @@
 namespace WebCore {
 
 class MediaDocument final : public HTMLDocument {
+    WTF_MAKE_ISO_ALLOCATED(MediaDocument);
 public:
     static Ref<MediaDocument> create(Frame* frame, const URL& url)
     {
@@ -39,7 +40,6 @@ public:
     }
     virtual ~MediaDocument();
 
-    void mediaElementSawUnsupportedTracks();
     void mediaElementNaturalSizeChanged(const IntSize&);
     String outgoingReferrer() const { return m_outgoingReferrer; }
 
@@ -52,7 +52,6 @@ private:
 
     void replaceMediaElementTimerFired();
 
-    Timer m_replaceMediaElementTimer;
     String m_outgoingReferrer;
 };
 

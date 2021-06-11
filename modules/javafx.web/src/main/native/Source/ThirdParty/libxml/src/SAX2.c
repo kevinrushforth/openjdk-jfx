@@ -40,7 +40,7 @@
  * TODO:
  *
  * macro to flag unimplemented blocks
- * XML_CATALOG_PREFER user env to select between system/public prefered
+ * XML_CATALOG_PREFER user env to select between system/public preferred
  * option. C.f. Richard Tobin <richard@cogsci.ed.ac.uk>
  *> Just FYI, I am using an environment variable XML_CATALOG_PREFER with
  *> values "system" and "public".  I have made the default be "system" to
@@ -1145,22 +1145,22 @@ xmlSAX2AttributeInternal(void *ctx, const xmlChar *fullname,
 #endif
     {
 #ifdef LIBXML_VALID_ENABLED
-    /*
-     * Do the last stage of the attribute normalization
-     * Needed for HTML too:
-     *   http://www.w3.org/TR/html4/types.html#h-6.2
-     */
-    ctxt->vctxt.valid = 1;
-    nval = xmlValidCtxtNormalizeAttributeValue(&ctxt->vctxt,
-                                       ctxt->myDoc, ctxt->node,
-                       fullname, value);
-    if (ctxt->vctxt.valid != 1) {
-    ctxt->valid = 0;
-    }
-    if (nval != NULL)
-    value = nval;
+        /*
+         * Do the last stage of the attribute normalization
+         * Needed for HTML too:
+         *   http://www.w3.org/TR/html4/types.html#h-6.2
+         */
+        ctxt->vctxt.valid = 1;
+        nval = xmlValidCtxtNormalizeAttributeValue(&ctxt->vctxt,
+                                               ctxt->myDoc, ctxt->node,
+                                               fullname, value);
+        if (ctxt->vctxt.valid != 1) {
+            ctxt->valid = 0;
+        }
+        if (nval != NULL)
+            value = nval;
 #else
-    nval = NULL;
+        nval = NULL;
 #endif /* LIBXML_VALID_ENABLED */
     }
 
@@ -1305,24 +1305,24 @@ xmlSAX2AttributeInternal(void *ctx, const xmlChar *fullname,
     } else {
             xmlAttrPtr prop;
 
-    prop = ctxt->node->properties;
-    while (prop != NULL) {
-        if (prop->ns != NULL) {
-        if ((xmlStrEqual(name, prop->name)) &&
-            ((namespace == prop->ns) ||
-             (xmlStrEqual(namespace->href, prop->ns->href)))) {
-            xmlNsErrMsg(ctxt, XML_ERR_ATTRIBUTE_REDEFINED,
-                    "Attribute %s in %s redefined\n",
-                             name, namespace->href);
-            ctxt->wellFormed = 0;
-            if (ctxt->recovery == 0) ctxt->disableSAX = 1;
+            prop = ctxt->node->properties;
+            while (prop != NULL) {
+                if (prop->ns != NULL) {
+                    if ((xmlStrEqual(name, prop->name)) &&
+                        ((namespace == prop->ns) ||
+                         (xmlStrEqual(namespace->href, prop->ns->href)))) {
+                            xmlNsErrMsg(ctxt, XML_ERR_ATTRIBUTE_REDEFINED,
+                                    "Attribute %s in %s redefined\n",
+                                             name, namespace->href);
+                        ctxt->wellFormed = 0;
+                        if (ctxt->recovery == 0) ctxt->disableSAX = 1;
                         if (name != NULL)
                             xmlFree(name);
-            goto error;
-        }
-        }
-        prop = prop->next;
-    }
+                        goto error;
+                    }
+                }
+                prop = prop->next;
+            }
         }
     } else {
     namespace = NULL;
@@ -1512,8 +1512,8 @@ process_external_subset:
     attr = elemDecl->attributes;
     while (attr != NULL) {
         /*
-         * Make sure that attributes redefinition occuring in the
-         * internal subset are not overriden by definitions in the
+         * Make sure that attributes redefinition occurring in the
+         * internal subset are not overridden by definitions in the
          * external subset.
          */
         if (attr->defaultValue != NULL) {
@@ -1665,7 +1665,13 @@ xmlSAX2StartElement(void *ctx, const xmlChar *fullname, const xmlChar **atts)
 #ifdef DEBUG_SAX_TREE
     xmlGenericError(xmlGenericErrorContext, "pushing(%s)\n", name);
 #endif
-    nodePush(ctxt, ret);
+    if (nodePush(ctxt, ret) < 0) {
+        xmlUnlinkNode(ret);
+        xmlFreeNode(ret);
+        if (prefix != NULL)
+            xmlFree(prefix);
+        return;
+    }
 
     /*
      * Link the child element
@@ -1730,8 +1736,8 @@ xmlSAX2StartElement(void *ctx, const xmlChar *fullname, const xmlChar **atts)
     }
 
     /*
-     * set the namespace node, making sure that if the default namspace
-     * is unbound on a parent we simply kee it NULL
+     * set the namespace node, making sure that if the default namespace
+     * is unbound on a parent we simply keep it NULL
      */
     if ((ns != NULL) && (ns->href != NULL) &&
     ((ns->href[0] != 0) || (ns->prefix != NULL)))
@@ -2006,7 +2012,7 @@ xmlSAX2AttributeNs(xmlParserCtxtPtr ctxt,
     else
         ret->name = xmlStrdup(localname);
 
-        /* link at the end to preserv order, TODO speed up with a last */
+        /* link at the end to preserve order, TODO speed up with a last */
     if (ctxt->node->properties == NULL) {
         ctxt->node->properties = ret;
     } else {
@@ -2098,7 +2104,7 @@ xmlSAX2AttributeNs(xmlParserCtxtPtr ctxt,
         } else {
             /*
          * dup now contains a string of the flattened attribute
-         * content with entities substitued. Check if we need to
+         * content with entities substituted. Check if we need to
          * apply an extra layer of normalization.
          * It need to be done twice ... it's an extra burden related
          * to the ability to keep references in attributes
@@ -2131,7 +2137,7 @@ xmlSAX2AttributeNs(xmlParserCtxtPtr ctxt,
         }
     } else {
         /*
-         * if entities already have been substitued, then
+         * if entities already have been substituted, then
          * the attribute as passed is already normalized
          */
         dup = xmlStrndup(value, valueend - value);
@@ -2257,6 +2263,7 @@ xmlSAX2StartElementNs(void *ctx,
     ctxt->freeElems = ret->next;
     ctxt->freeElemsNr--;
     memset(ret, 0, sizeof(xmlNode));
+        ret->doc = ctxt->myDoc;
     ret->type = XML_ELEMENT_NODE;
 
     if (ctxt->dictNames)
@@ -2336,7 +2343,11 @@ xmlSAX2StartElementNs(void *ctx,
     /*
      * We are parsing a new node.
      */
-    nodePush(ctxt, ret);
+    if (nodePush(ctxt, ret) < 0) {
+        xmlUnlinkNode(ret);
+        xmlFreeNode(ret);
+        return;
+    }
 
     /*
      * Link the child element
@@ -2373,9 +2384,9 @@ xmlSAX2StartElementNs(void *ctx,
         return;
         }
             if (prefix != NULL)
-        xmlNsWarnMsg(ctxt, XML_NS_ERR_UNDEFINED_NAMESPACE,
-            "Namespace prefix %s was not found\n",
-            prefix, NULL);
+                xmlNsWarnMsg(ctxt, XML_NS_ERR_UNDEFINED_NAMESPACE,
+                             "Namespace prefix %s was not found\n",
+                             prefix, NULL);
             else
                 xmlNsWarnMsg(ctxt, XML_NS_ERR_UNDEFINED_NAMESPACE,
                              "Namespace default prefix was not found\n",
@@ -2389,7 +2400,7 @@ xmlSAX2StartElementNs(void *ctx,
     if (nb_attributes > 0) {
         for (j = 0,i = 0;i < nb_attributes;i++,j+=5) {
         /*
-         * Handle the rare case of an undefined atribute prefix
+         * Handle the rare case of an undefined attribute prefix
          */
         if ((attributes[j+1] != NULL) && (attributes[j+2] == NULL)) {
         if (ctxt->dictNames) {
@@ -2414,7 +2425,7 @@ xmlSAX2StartElementNs(void *ctx,
         }
         }
         xmlSAX2AttributeNs(ctxt, attributes[j], attributes[j+1],
-                           attributes[j+3], attributes[j+4]);
+                   attributes[j+3], attributes[j+4]);
     }
     }
 
@@ -2575,7 +2586,7 @@ xmlSAX2Characters(void *ctx, const xmlChar *ch, int len)
          * The whole point of maintaining nodelen and nodemem,
          * xmlTextConcat is too costly, i.e. compute length,
          * reallocate a new buffer, move data, append ch. Here
-         * We try to minimaze realloc() uses and avoid copying
+         * We try to minimize realloc() uses and avoid copying
          * and recomputing length over and over.
          */
         if (lastChild->content == (xmlChar *)&(lastChild->properties)) {

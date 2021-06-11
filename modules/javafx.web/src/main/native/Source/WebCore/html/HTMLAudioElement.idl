@@ -24,9 +24,8 @@
  */
 
 [
-    EnabledAtRuntime=Audio,
     Conditional=VIDEO,
     ConstructorCallWith=Document,
-    NamedConstructor=Audio(optional [AtomicString] DOMString src)
+    NamedConstructor=Audio(optional [AtomString] DOMString src)
 ] interface HTMLAudioElement : HTMLMediaElement {
 };

@@ -28,6 +28,7 @@ class ProgressValueElement;
 class RenderProgress;
 
 class HTMLProgressElement final : public LabelableElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLProgressElement);
 public:
     static const double IndeterminatePosition;
     static const double InvalidPosition;
@@ -53,7 +54,7 @@ private:
     bool childShouldCreateRenderer(const Node&) const final;
     RenderProgress* renderProgress() const;
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
 
     void didAttachRenderers() final;
 

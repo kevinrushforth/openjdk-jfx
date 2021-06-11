@@ -20,8 +20,7 @@
     Boston, MA 02110-1301, USA.
 */
 
-#ifndef Length_h
-#define Length_h
+#pragma once
 
 #include "AnimationUtilities.h"
 #include <memory>
@@ -29,6 +28,7 @@
 #include <wtf/Assertions.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/Forward.h>
+#include <wtf/UniqueArray.h>
 
 namespace WTF {
 class TextStream;
@@ -138,8 +138,8 @@ private:
 // Blend two lengths to produce a new length that is in between them. Used for animation.
 Length blend(const Length& from, const Length& to, double progress);
 
-std::unique_ptr<Length[]> newCoordsArray(const String&, int& length);
-std::unique_ptr<Length[]> newLengthArray(const String&, int& length);
+UniqueArray<Length> newCoordsArray(const String&, int& length);
+UniqueArray<Length> newLengthArray(const String&, int& length);
 
 inline Length::Length(LengthType type)
     : m_intValue(0), m_hasQuirk(false), m_type(type), m_isFloat(false)
@@ -176,12 +176,12 @@ inline Length::Length(const Length& other)
     if (other.isCalculated())
         other.ref();
 
-    memcpy(this, &other, sizeof(Length));
+    memcpy(static_cast<void*>(this), static_cast<void*>(const_cast<Length*>(&other)), sizeof(Length));
 }
 
 inline Length::Length(Length&& other)
 {
-    memcpy(this, &other, sizeof(Length));
+    memcpy(static_cast<void*>(this), static_cast<void*>(&other), sizeof(Length));
     other.m_type = Auto;
 }
 
@@ -423,5 +423,3 @@ Length convertTo100PercentMinusLength(const Length&);
 WTF::TextStream& operator<<(WTF::TextStream&, Length);
 
 } // namespace WebCore
-
-#endif // Length_h

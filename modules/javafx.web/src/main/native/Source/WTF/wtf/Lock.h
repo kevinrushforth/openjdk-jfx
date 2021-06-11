@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,8 +23,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef WTF_Lock_h
-#define WTF_Lock_h
+#pragma once
 
 #include <wtf/LockAlgorithm.h>
 #include <wtf/Locker.h>
@@ -32,7 +31,7 @@
 
 namespace TestWebKitAPI {
 struct LockInspector;
-};
+}
 
 namespace WTF {
 
@@ -52,7 +51,7 @@ class Lock {
     WTF_MAKE_NONCOPYABLE(Lock);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    Lock() = default;
+    constexpr Lock() = default;
 
     void lock()
     {
@@ -115,8 +114,8 @@ public:
 private:
     friend struct TestWebKitAPI::LockInspector;
 
-    static const uint8_t isHeldBit = 1;
-    static const uint8_t hasParkedBit = 2;
+    static constexpr uint8_t isHeldBit = 1;
+    static constexpr uint8_t hasParkedBit = 2;
 
     WTF_EXPORT_PRIVATE void lockSlow();
     WTF_EXPORT_PRIVATE void unlockSlow();
@@ -132,14 +131,9 @@ private:
     Atomic<uint8_t> m_byte { 0 };
 };
 
-using StaticLock = Lock;
 using LockHolder = Locker<Lock>;
 
 } // namespace WTF
 
 using WTF::Lock;
 using WTF::LockHolder;
-using WTF::StaticLock;
-
-#endif // WTF_Lock_h
-

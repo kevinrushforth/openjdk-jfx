@@ -24,6 +24,8 @@
 #  gstreamer-pbutils:    GSTREAMER_PBUTILS_INCLUDE_DIRS and GSTREAMER_PBUTILS_LIBRARIES
 #  gstreamer-tag:        GSTREAMER_TAG_INCLUDE_DIRS and GSTREAMER_TAG_LIBRARIES
 #  gstreamer-video:      GSTREAMER_VIDEO_INCLUDE_DIRS and GSTREAMER_VIDEO_LIBRARIES
+#  gstreamer-codecparser:GSTREAMER_CODECPARSERS_INCLUDE_DIRS and GSTREAMER_CODECPARSERS_LIBRARIES
+#  gstreamer-full:       GSTREAMER_FULL_INCLUDE_DIRS and GSTREAMER_FULL_LIBRARIES
 #
 # Copyright (C) 2012 Raphael Kubo da Costa <rakuco@webkit.org>
 #
@@ -48,7 +50,7 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-find_package(PkgConfig)
+find_package(PkgConfig QUIET)
 
 # Helper macro to find a GStreamer plugin (or GStreamer itself)
 #   _component_prefix is prepended to the _INCLUDE_DIRS and _LIBRARIES variables (eg. "GSTREAMER_AUDIO")
@@ -62,7 +64,19 @@ macro(FIND_GSTREAMER_COMPONENT _component_prefix _pkgconfig_name _library)
     else ()
         pkg_check_modules(PC_${_component_prefix} ${_pkgconfig_name})
     endif ()
-    set(${_component_prefix}_INCLUDE_DIRS ${PC_${_component_prefix}_INCLUDE_DIRS})
+
+    # The gst .pc files might have their `includedir` not specify the
+    # gstreamer-1.0 suffix. In that case the `Cflags` contain
+    # ${includedir}/gstreamer-1.0 which remains correct. The issue here is that
+    # we don't rely on the `Cflags`, cmake fails to generate a proper
+    # `.._INCLUDE_DIRS` variable in this case. So we need to do it here...
+    set(_include_dir "${PC_${_component_prefix}_INCLUDEDIR}")
+    string(REGEX MATCH "(.*)/gstreamer-1.0" _dummy "${_include_dir}")
+    if ("${CMAKE_MATCH_1}" STREQUAL "")
+        set(${_component_prefix}_INCLUDE_DIRS "${_include_dir}/gstreamer-1.0;${PC_${_component_prefix}_INCLUDE_DIRS}")
+    else ()
+        set(${_component_prefix}_INCLUDE_DIRS "${PC_${_component_prefix}_INCLUDE_DIRS}")
+    endif ()
 
     find_library(${_component_prefix}_LIBRARIES
         NAMES ${_library}
@@ -77,6 +91,7 @@ endmacro()
 # 1.1. Find headers and libraries
 FIND_GSTREAMER_COMPONENT(GSTREAMER gstreamer-1.0 gstreamer-1.0)
 FIND_GSTREAMER_COMPONENT(GSTREAMER_BASE gstreamer-base-1.0 gstbase-1.0)
+FIND_GSTREAMER_COMPONENT(GSTREAMER_FULL gstreamer-full-1.0>=1.17.0 gstreamer-full-1.0)
 
 # -------------------------
 # 2. Find GStreamer plugins
@@ -90,6 +105,7 @@ FIND_GSTREAMER_COMPONENT(GSTREAMER_MPEGTS gstreamer-mpegts-1.0>=1.4.0 gstmpegts-
 FIND_GSTREAMER_COMPONENT(GSTREAMER_PBUTILS gstreamer-pbutils-1.0 gstpbutils-1.0)
 FIND_GSTREAMER_COMPONENT(GSTREAMER_TAG gstreamer-tag-1.0 gsttag-1.0)
 FIND_GSTREAMER_COMPONENT(GSTREAMER_VIDEO gstreamer-video-1.0 gstvideo-1.0)
+FIND_GSTREAMER_COMPONENT(GSTREAMER_CODECPARSERS gstreamer-codecparsers-1.0 gstcodecparsers-1.0)
 
 # ------------------------------------------------
 # 3. Process the COMPONENTS passed to FIND_PACKAGE
@@ -128,4 +144,8 @@ mark_as_advanced(
     GSTREAMER_TAG_LIBRARIES
     GSTREAMER_VIDEO_INCLUDE_DIRS
     GSTREAMER_VIDEO_LIBRARIES
+    GSTREAMER_CODECPARSERS_INCLUDE_DIRS
+    GSTREAMER_CODECPARSERS_LIBRARIES
+    GSTREAMER_FULL_INCLUDE_DIRS
+    GSTREAMER_FULL_LIBRARIES
 )

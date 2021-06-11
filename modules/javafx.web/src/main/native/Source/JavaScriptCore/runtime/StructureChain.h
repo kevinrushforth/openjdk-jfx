@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2008-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,6 +29,7 @@
 #include "JSObject.h"
 #include "Structure.h"
 #include <wtf/StdLibExtras.h>
+#include <wtf/UniqueArray.h>
 
 namespace JSC {
 
@@ -39,16 +40,17 @@ class StructureChain final : public JSCell {
     friend class JIT;
 
 public:
-    typedef JSCell Base;
-    static const unsigned StructureFlags = Base::StructureFlags | StructureIsImmortal;
+    using Base = JSCell;
+    static constexpr unsigned StructureFlags = Base::StructureFlags | StructureIsImmortal;
 
-    static StructureChain* create(VM& vm, JSObject* head)
+    template<typename CellType, SubspaceAccess>
+    static IsoSubspace* subspaceFor(VM& vm)
     {
-        StructureChain* chain = new (NotNull, allocateCell<StructureChain>(vm.heap)) StructureChain(vm, vm.structureChainStructure.get());
-        chain->finishCreation(vm, head);
-        return chain;
+        return &vm.structureChainSpace;
     }
-    WriteBarrier<Structure>* head() { return m_vector.get(); }
+
+    static StructureChain* create(VM&, JSObject*);
+    StructureID* head() { return m_vector.get(); }
     static void visitChildren(JSCell*, SlotVisitor&);
 
     static Structure* createStructure(VM& vm, JSGlobalObject* globalObject, JSValue prototype)
@@ -58,34 +60,13 @@ public:
 
     DECLARE_INFO;
 
-    static const bool needsDestruction = true;
-    static void destroy(JSCell*);
-
-protected:
-    void finishCreation(VM& vm, JSObject* head)
-    {
-        Base::finishCreation(vm);
-
-        size_t size = 0;
-        for (JSObject* current = head; current; current = current->structure(vm)->storedPrototypeObject(current))
-            ++size;
-
-        std::unique_ptr<WriteBarrier<Structure>[]> vector = std::make_unique<WriteBarrier<Structure>[]>(size + 1);
-
-        size_t i = 0;
-        for (JSObject* current = head; current; current = current->structure(vm)->storedPrototypeObject(current))
-            vector[i++].set(vm, this, current->structure(vm));
-
-        vm.heap.mutatorFence();
-        m_vector = WTFMove(vector);
-        vm.heap.writeBarrier(this);
-    }
-
 private:
     friend class LLIntOffsetsExtractor;
 
-    StructureChain(VM&, Structure*);
-    std::unique_ptr<WriteBarrier<Structure>[]> m_vector;
+    void finishCreation(VM&, JSObject* head);
+
+    StructureChain(VM&, Structure*, StructureID*);
+    AuxiliaryBarrier<StructureID*> m_vector;
 };
 
 } // namespace JSC

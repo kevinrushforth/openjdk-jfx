@@ -35,12 +35,12 @@ public:
 
     virtual RenderElement* renderer() const = 0;
     virtual const RenderStyle& currentStyle() const = 0;
-    virtual bool isAccelerated() const = 0;
     virtual bool filterFunctionListsMatch() const = 0;
     virtual bool transformFunctionListsMatch() const = 0;
 #if ENABLE(FILTERS_LEVEL_2)
     virtual bool backdropFilterFunctionListsMatch() const = 0;
 #endif
+    virtual bool colorFilterFunctionListsMatch() const = 0;
 
     virtual ~CSSPropertyBlendingClient() = default;
 };

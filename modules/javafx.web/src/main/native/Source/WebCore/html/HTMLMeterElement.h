@@ -30,6 +30,7 @@ class MeterValueElement;
 class RenderMeter;
 
 class HTMLMeterElement final : public LabelableElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLMeterElement);
 public:
     static Ref<HTMLMeterElement> create(const QualifiedName&, Document&);
 
@@ -72,7 +73,7 @@ private:
 
     RenderPtr<RenderElement> createElementRenderer(RenderStyle&&, const RenderTreePosition&) final;
     bool childShouldCreateRenderer(const Node&) const final;
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
 
     void didElementStateChange();
     void didAddUserAgentShadowRoot(ShadowRoot&) final;

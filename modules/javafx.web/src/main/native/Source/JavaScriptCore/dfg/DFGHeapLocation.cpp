@@ -28,6 +28,8 @@
 
 #if ENABLE(DFG_JIT)
 
+#include "JSCJSValueInlines.h"
+
 namespace JSC { namespace DFG {
 
 void HeapLocation::dump(PrintStream& out) const
@@ -66,6 +68,10 @@ void printInternal(PrintStream& out, LocationKind kind)
 
     case IsFunctionLoc:
         out.print("IsFunctionLoc");
+        return;
+
+    case IsConstructorLoc:
+        out.print("IsConstructorLoc");
         return;
 
     case GetterLoc:
@@ -132,6 +138,10 @@ void printInternal(PrintStream& out, LocationKind kind)
         out.print("IndexedPropertyDoubleSaneChainLoc");
         return;
 
+    case IndexedPropertyInt32Loc:
+        out.print("IndexedPropertyInt32Loc");
+        return;
+
     case IndexedPropertyInt52Loc:
         out.print("IndexedPropertyInt52Loc");
         return;
@@ -142,10 +152,6 @@ void printInternal(PrintStream& out, LocationKind kind)
 
     case IndexedPropertyStorageLoc:
         out.print("IndexedPropertyStorageLoc");
-        return;
-
-    case InstanceOfLoc:
-        out.print("InstanceOfLoc");
         return;
 
     case NamedPropertyLoc:
@@ -166,6 +172,10 @@ void printInternal(PrintStream& out, LocationKind kind)
 
     case RegExpObjectLastIndexLoc:
         out.print("RegExpObjectLastIndexLoc");
+        return;
+
+    case DateFieldLoc:
+        out.print("DateFieldLoc");
         return;
 
     case MapBucketLoc:
@@ -190,6 +200,10 @@ void printInternal(PrintStream& out, LocationKind kind)
 
     case WeakMapGetLoc:
         out.print("WeakMapGetLoc");
+        return;
+
+    case InternalFieldObjectLoc:
+        out.print("InternalFieldObjectLoc");
         return;
 
     case DOMStateLoc:

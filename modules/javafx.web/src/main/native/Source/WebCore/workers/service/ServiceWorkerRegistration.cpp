@@ -31,21 +31,25 @@
 #include "Document.h"
 #include "Event.h"
 #include "EventNames.h"
+#include "JSDOMPromiseDeferred.h"
 #include "Logging.h"
 #include "ServiceWorker.h"
 #include "ServiceWorkerContainer.h"
 #include "ServiceWorkerTypes.h"
 #include "WorkerGlobalScope.h"
+#include <wtf/IsoMallocInlines.h>
 
 #define REGISTRATION_RELEASE_LOG_IF_ALLOWED(fmt, ...) RELEASE_LOG_IF(m_container->isAlwaysOnLoggingAllowed(), ServiceWorker, "%p - ServiceWorkerRegistration::" fmt, this, ##__VA_ARGS__)
 #define REGISTRATION_RELEASE_LOG_ERROR_IF_ALLOWED(fmt, ...) RELEASE_LOG_ERROR_IF(m_container->isAlwaysOnLoggingAllowed(), ServiceWorker, "%p - ServiceWorkerRegistration::" fmt, this, ##__VA_ARGS__)
 
 namespace WebCore {
 
+WTF_MAKE_ISO_ALLOCATED_IMPL(ServiceWorkerRegistration);
+
 Ref<ServiceWorkerRegistration> ServiceWorkerRegistration::getOrCreate(ScriptExecutionContext& context, Ref<ServiceWorkerContainer>&& container, ServiceWorkerRegistrationData&& data)
 {
     if (auto* registration = container->registration(data.identifier)) {
-        ASSERT(!registration->m_isStopped);
+        ASSERT(!registration->isContextStopped());
         return *registration;
     }
 
@@ -72,7 +76,6 @@ ServiceWorkerRegistration::ServiceWorkerRegistration(ScriptExecutionContext& con
     m_container->addRegistration(*this);
 
     relaxAdoptionRequirement();
-    updatePendingActivityForEventDispatch();
 }
 
 ServiceWorkerRegistration::~ServiceWorkerRegistration()
@@ -97,7 +100,7 @@ ServiceWorker* ServiceWorkerRegistration::active()
     return m_activeWorker.get();
 }
 
-ServiceWorker* ServiceWorkerRegistration::getNewestWorker()
+ServiceWorker* ServiceWorkerRegistration::getNewestWorker() const
 {
     if (m_installingWorker)
         return m_installingWorker.get();
@@ -109,7 +112,7 @@ ServiceWorker* ServiceWorkerRegistration::getNewestWorker()
 
 const String& ServiceWorkerRegistration::scope() const
 {
-    return m_registrationData.scopeURL;
+    return m_registrationData.scopeURL.string();
 }
 
 ServiceWorkerUpdateViaCache ServiceWorkerRegistration::updateViaCache() const
@@ -134,14 +137,14 @@ void ServiceWorkerRegistration::setUpdateViaCache(ServiceWorkerUpdateViaCache up
 
 void ServiceWorkerRegistration::update(Ref<DeferredPromise>&& promise)
 {
-    if (m_isStopped) {
+    if (isContextStopped()) {
         promise->reject(Exception(InvalidStateError));
         return;
     }
 
     auto* newestWorker = getNewestWorker();
     if (!newestWorker) {
-        promise->reject(Exception(InvalidStateError, ASCIILiteral("newestWorker is null")));
+        promise->reject(Exception(InvalidStateError, "newestWorker is null"_s));
         return;
     }
 
@@ -149,27 +152,14 @@ void ServiceWorkerRegistration::update(Ref<DeferredPromise>&& promise)
     m_container->updateRegistration(m_registrationData.scopeURL, newestWorker->scriptURL(), WorkerType::Classic, WTFMove(promise));
 }
 
-void ServiceWorkerRegistration::softUpdate()
-{
-    if (m_isStopped)
-        return;
-
-    auto* newestWorker = getNewestWorker();
-    if (!newestWorker)
-        return;
-
-    // FIXME: Support worker types.
-    m_container->updateRegistration(m_registrationData.scopeURL, newestWorker->scriptURL(), WorkerType::Classic, nullptr);
-}
-
 void ServiceWorkerRegistration::unregister(Ref<DeferredPromise>&& promise)
 {
-    if (m_isStopped) {
+    if (isContextStopped()) {
         promise->reject(Exception(InvalidStateError));
         return;
     }
 
-    m_container->removeRegistration(m_registrationData.scopeURL, WTFMove(promise));
+    m_container->unregisterRegistration(identifier(), WTFMove(promise));
 }
 
 void ServiceWorkerRegistration::updateStateFromServer(ServiceWorkerRegistrationState state, RefPtr<ServiceWorker>&& serviceWorker)
@@ -188,23 +178,16 @@ void ServiceWorkerRegistration::updateStateFromServer(ServiceWorkerRegistrationS
         m_activeWorker = WTFMove(serviceWorker);
         break;
     }
-    updatePendingActivityForEventDispatch();
 }
 
-void ServiceWorkerRegistration::scheduleTaskToFireUpdateFoundEvent()
+void ServiceWorkerRegistration::queueTaskToFireUpdateFoundEvent()
 {
-    if (m_isStopped)
+    if (isContextStopped())
         return;
 
-    scriptExecutionContext()->postTask([this, protectedThis = makeRef(*this)](ScriptExecutionContext&) {
-        if (m_isStopped)
-            return;
+    REGISTRATION_RELEASE_LOG_IF_ALLOWED("fireUpdateFoundEvent: Firing updatefound event for registration %llu", identifier().toUInt64());
 
-        REGISTRATION_RELEASE_LOG_IF_ALLOWED("scheduleTaskToFireUpdateFoundEvent: Firing updatefound event for registration %llu", identifier().toUInt64());
-
-        ASSERT(m_pendingActivityForEventDispatch);
-        dispatchEvent(Event::create(eventNames().updatefoundEvent, false, false));
-    });
+    queueTaskToDispatchEvent(*this, TaskSource::DOMManipulation, Event::create(eventNames().updatefoundEvent, Event::CanBubble::No, Event::IsCancelable::No));
 }
 
 EventTargetInterface ServiceWorkerRegistration::eventTargetInterface() const
@@ -222,29 +205,14 @@ const char* ServiceWorkerRegistration::activeDOMObjectName() const
     return "ServiceWorkerRegistration";
 }
 
-bool ServiceWorkerRegistration::canSuspendForDocumentSuspension() const
-{
-    // FIXME: We should do better as this prevents a page from entering PageCache when there is a service worker registration.
-    return !hasPendingActivity();
-}
-
 void ServiceWorkerRegistration::stop()
 {
-    m_isStopped = true;
     removeAllEventListeners();
-    updatePendingActivityForEventDispatch();
 }
 
-void ServiceWorkerRegistration::updatePendingActivityForEventDispatch()
+bool ServiceWorkerRegistration::virtualHasPendingActivity() const
 {
-    // If a registration has no ServiceWorker, then it has been cleared on server-side.
-    if (m_isStopped || !getNewestWorker()) {
-        m_pendingActivityForEventDispatch = nullptr;
-        return;
-    }
-    if (m_pendingActivityForEventDispatch)
-        return;
-    m_pendingActivityForEventDispatch = makePendingActivity(*this);
+    return getNewestWorker() && hasEventListeners();
 }
 
 } // namespace WebCore

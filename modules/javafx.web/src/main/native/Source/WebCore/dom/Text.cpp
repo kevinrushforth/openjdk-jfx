@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2003-2018 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -33,12 +33,16 @@
 #include "StyleInheritedData.h"
 #include "StyleResolver.h"
 #include "StyleUpdate.h"
+#include "TextManipulationController.h"
 #include "TextNodeTraversal.h"
 #include <wtf/CheckedArithmetic.h>
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/StringBuilder.h>
 
 namespace WebCore {
+
+WTF_MAKE_ISO_ALLOCATED_IMPL(Text);
 
 Ref<Text> Text::create(Document& document, const String& data)
 {
@@ -70,12 +74,12 @@ ExceptionOr<Ref<Text>> Text::splitText(unsigned offset)
             return insertResult.releaseException();
     }
 
-    document().textNodeSplit(this);
+    document().textNodeSplit(*this);
 
     if (renderer())
         renderer()->setTextWithOffset(data(), 0, oldData.length());
 
-    return WTFMove(newText);
+    return newText;
 }
 
 static const Text* earliestLogicallyAdjacentTextNode(const Text* text)
@@ -150,7 +154,7 @@ RefPtr<Text> Text::replaceWholeText(const String& newText)
 
 String Text::nodeName() const
 {
-    return ASCIILiteral("#text");
+    return "#text"_s;
 }
 
 Node::NodeType Text::nodeType() const
@@ -218,28 +222,47 @@ void Text::updateRendererAfterContentChange(unsigned offsetOfReplacedData, unsig
     document().updateTextRenderer(*this, offsetOfReplacedData, lengthOfReplacedData);
 }
 
+String Text::debugDescription() const
+{
+    StringBuilder builder;
+
+    builder.append(CharacterData::debugDescription());
+
+    String value = data();
+    builder.append(" length="_s, value.length());
+
+    value.replaceWithLiteral('\\', "\\\\");
+    value.replaceWithLiteral('\n', "\\n");
+
+    const size_t maxDumpLength = 30;
+    if (value.length() > maxDumpLength) {
+        value.truncate(maxDumpLength - 10);
+        value.append("..."_s);
+    }
+
+    builder.append(" \"", value, '\"');
+
+    return builder.toString();
+}
+
 #if ENABLE(TREE_DEBUGGING)
 void Text::formatForDebugger(char* buffer, unsigned length) const
 {
-    StringBuilder result;
-    String s;
-
-    result.append(nodeName());
-
-    s = data();
-    if (s.length() > 0) {
-        if (result.length())
-            result.appendLiteral("; ");
-        result.appendLiteral("length=");
-        result.appendNumber(s.length());
-        result.appendLiteral("; value=\"");
-        result.append(s);
-        result.append('"');
-    }
-
-    strncpy(buffer, result.toString().utf8().data(), length - 1);
+    strncpy(buffer, debugDescription().utf8().data(), length - 1);
     buffer[length - 1] = '\0';
 }
 #endif
+
+void Text::setDataAndUpdate(const String& newData, unsigned offsetOfReplacedData, unsigned oldLength, unsigned newLength)
+{
+    auto oldData = data();
+    CharacterData::setDataAndUpdate(newData, offsetOfReplacedData, oldLength, newLength);
+
+    if (!offsetOfReplacedData) {
+        auto* textManipulationController = document().textManipulationControllerIfExists();
+        if (UNLIKELY(textManipulationController && oldData != newData))
+            textManipulationController->didUpdateContentForText(*this);
+    }
+}
 
 } // namespace WebCore

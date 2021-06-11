@@ -27,8 +27,7 @@
 
 #if USE(LIBEPOXY)
 #include <epoxy/gl.h>
-#elif USE(OPENGL_ES_2)
-#define GL_GLEXT_PROTOTYPES 1
+#elif USE(OPENGL_ES)
 #include <GLES2/gl2.h>
 #else
 #include "OpenGLShims.h"
@@ -52,4 +51,8 @@
 
 #ifndef GL_UNPACK_SKIP_PIXELS
 #define GL_UNPACK_SKIP_PIXELS 0x0CF4
+#endif
+
+#ifndef GL_TEXTURE_EXTERNAL_OES
+#define GL_TEXTURE_EXTERNAL_OES 0x8D65
 #endif

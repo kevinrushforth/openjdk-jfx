@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2018 Apple Inc. All rights reserved.
  * Copyright (c) 2010 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,84 +32,86 @@
 #include "config.h"
 #include "ScriptArguments.h"
 
-#include "JSCInlines.h"
+#include "CatchScope.h"
 #include "ProxyObject.h"
-#include "ScriptValue.h"
+#include "StrongInlines.h"
 
 namespace Inspector {
 
-Ref<ScriptArguments> ScriptArguments::create(JSC::ExecState* scriptState, Vector<Deprecated::ScriptValue>& arguments)
+Ref<ScriptArguments> ScriptArguments::create(JSC::JSGlobalObject* globalObject, Vector<JSC::Strong<JSC::Unknown>>&& arguments)
 {
-    return adoptRef(*new ScriptArguments(scriptState, arguments));
+    return adoptRef(*new ScriptArguments(globalObject, WTFMove(arguments)));
 }
 
-Ref<ScriptArguments> ScriptArguments::createEmpty(JSC::ExecState* scriptState)
-{
-    return adoptRef(*new ScriptArguments(scriptState));
-}
-
-ScriptArguments::ScriptArguments(JSC::ExecState* execState)
-    : m_globalObject(execState->vm(), execState->lexicalGlobalObject())
+ScriptArguments::ScriptArguments(JSC::JSGlobalObject* globalObject, Vector<JSC::Strong<JSC::Unknown>>&& arguments)
+    : m_globalObject(globalObject->vm(), globalObject)
+    , m_arguments(WTFMove(arguments))
 {
 }
 
-ScriptArguments::ScriptArguments(JSC::ExecState* execState, Vector<Deprecated::ScriptValue>& arguments)
-    : m_globalObject(execState->vm(), execState->lexicalGlobalObject())
-{
-    m_arguments.swap(arguments);
-}
+ScriptArguments::~ScriptArguments() = default;
 
-ScriptArguments::~ScriptArguments()
-{
-}
-
-const Deprecated::ScriptValue& ScriptArguments::argumentAt(size_t index) const
+JSC::JSValue ScriptArguments::argumentAt(size_t index) const
 {
     ASSERT(m_arguments.size() > index);
-    return m_arguments[index];
+    return m_arguments[index].get();
 }
 
-JSC::ExecState* ScriptArguments::globalState() const
+JSC::JSGlobalObject* ScriptArguments::globalObject() const
 {
-    if (m_globalObject)
-        return const_cast<JSC::JSGlobalObject*>(m_globalObject.get())->globalExec();
-
-    return nullptr;
+    return m_globalObject.get();
 }
 
-bool ScriptArguments::getFirstArgumentAsString(String& result)
+bool ScriptArguments::getFirstArgumentAsString(String& result) const
 {
     if (!argumentCount())
         return false;
 
-    if (!globalState()) {
+    auto* globalObject = this->globalObject();
+    if (!globalObject) {
         ASSERT_NOT_REACHED();
         return false;
     }
 
-    JSC::JSValue value = argumentAt(0).jsValue();
-    if (JSC::jsDynamicCast<JSC::ProxyObject*>(globalState()->vm(), value)) {
-        result = ASCIILiteral("[object Proxy]");
+    auto value = argumentAt(0);
+    if (JSC::jsDynamicCast<JSC::ProxyObject*>(globalObject->vm(), value)) {
+        result = "[object Proxy]"_s;
         return true;
     }
 
-    result = argumentAt(0).toString(globalState());
+    auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+    result = value.toWTFString(globalObject);
+    scope.clearException();
     return true;
 }
 
-bool ScriptArguments::isEqual(ScriptArguments* other) const
+bool ScriptArguments::isEqual(const ScriptArguments& other) const
 {
-    if (!other)
+    auto size = m_arguments.size();
+
+    if (size != other.m_arguments.size())
         return false;
 
-    if (m_arguments.size() != other->m_arguments.size())
-        return false;
-    if (!globalState() && m_arguments.size())
+    if (!size)
+        return true;
+
+    auto* globalObject = this->globalObject();
+    if (!globalObject)
         return false;
 
-    for (size_t i = 0; i < m_arguments.size(); ++i) {
-        if (!m_arguments[i].isEqual(other->globalState(), other->m_arguments[i]))
-            return false;
+    for (size_t i = 0; i < size; ++i) {
+        auto a = m_arguments[i].get();
+        auto b = other.m_arguments[i].get();
+        if (!a || !b) {
+            if (a != b)
+                return false;
+        } else {
+            auto scope = DECLARE_CATCH_SCOPE(globalObject->vm());
+            bool result = JSC::JSValue::strictEqual(globalObject, a, b);
+            scope.clearException();
+            if (!result)
+                return false;
+        }
     }
 
     return true;

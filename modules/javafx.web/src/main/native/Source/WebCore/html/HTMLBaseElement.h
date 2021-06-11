@@ -27,18 +27,19 @@
 namespace WebCore {
 
 class HTMLBaseElement final : public HTMLElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLBaseElement);
 public:
     static Ref<HTMLBaseElement> create(const QualifiedName&, Document&);
 
     WEBCORE_EXPORT URL href() const;
-    WEBCORE_EXPORT void setHref(const AtomicString&);
+    WEBCORE_EXPORT void setHref(const AtomString&);
 
 private:
     HTMLBaseElement(const QualifiedName&, Document&);
 
     String target() const final;
     bool isURLAttribute(const Attribute&) const final;
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
     InsertedIntoAncestorResult insertedIntoAncestor(InsertionType, ContainerNode&) final;
     void removedFromAncestor(RemovalType, ContainerNode&) final;
 };

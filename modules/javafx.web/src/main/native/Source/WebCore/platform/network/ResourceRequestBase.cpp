@@ -27,13 +27,17 @@
 #include "ResourceRequestBase.h"
 
 #include "HTTPHeaderNames.h"
+#include "Logging.h"
 #include "PublicSuffix.h"
 #include "ResourceRequest.h"
+#include "ResourceResponse.h"
+#include "SecurityOrigin.h"
+#include "SecurityPolicy.h"
 #include <wtf/PointerComparison.h>
 
 namespace WebCore {
 
-#if PLATFORM(IOS) || USE(CFURLCONNECTION)
+#if PLATFORM(IOS_FAMILY) || USE(CFURLCONNECTION)
 double ResourceRequestBase::s_defaultTimeoutInterval = INT_MAX;
 #else
 // Will use NSURLRequest default timeout unless set to a non-zero value with setDefaultTimeoutInterval().
@@ -64,6 +68,13 @@ void ResourceRequestBase::setAsIsolatedCopy(const ResourceRequest& other)
     setRequester(other.requester());
     setInitiatorIdentifier(other.initiatorIdentifier().isolatedCopy());
     setCachePartition(other.cachePartition().isolatedCopy());
+
+    if (auto inspectorInitiatorNodeIdentifier = other.inspectorInitiatorNodeIdentifier())
+        setInspectorInitiatorNodeIdentifier(*inspectorInitiatorNodeIdentifier);
+
+    if (!other.isSameSiteUnspecified())
+        setIsSameSite(other.isSameSite());
+    setIsTopSite(other.isTopSite());
 
     updateResourceRequest();
     m_httpHeaderFields = other.httpHeaderFields().isolatedCopy();
@@ -118,9 +129,25 @@ void ResourceRequestBase::setURL(const URL& url)
 
 static bool shouldUseGet(const ResourceRequestBase& request, const ResourceResponse& redirectResponse)
 {
+    if (equalLettersIgnoringASCIICase(request.httpMethod(), "get") || equalLettersIgnoringASCIICase(request.httpMethod(), "head"))
+        return false;
     if (redirectResponse.httpStatusCode() == 301 || redirectResponse.httpStatusCode() == 302)
         return equalLettersIgnoringASCIICase(request.httpMethod(), "post");
     return redirectResponse.httpStatusCode() == 303;
+}
+
+// https://fetch.spec.whatwg.org/#concept-http-redirect-fetch Step 11
+void ResourceRequestBase::redirectAsGETIfNeeded(const ResourceRequestBase &redirectRequest, const ResourceResponse& redirectResponse)
+{
+    if (shouldUseGet(redirectRequest, redirectResponse)) {
+        setHTTPMethod("GET"_s);
+        setHTTPBody(nullptr);
+        m_httpHeaderFields.remove(HTTPHeaderName::ContentLength);
+        m_httpHeaderFields.remove(HTTPHeaderName::ContentLanguage);
+        m_httpHeaderFields.remove(HTTPHeaderName::ContentEncoding);
+        m_httpHeaderFields.remove(HTTPHeaderName::ContentLocation);
+        clearHTTPContentType();
+    }
 }
 
 ResourceRequest ResourceRequestBase::redirectedRequest(const ResourceResponse& redirectResponse, bool shouldClearReferrerOnHTTPSToHTTPRedirect) const
@@ -134,14 +161,9 @@ ResourceRequest ResourceRequestBase::redirectedRequest(const ResourceResponse& r
 
     request.setURL(location.isEmpty() ? URL { } : URL { redirectResponse.url(), location });
 
-    if (shouldUseGet(*this, redirectResponse)) {
-        request.setHTTPMethod(ASCIILiteral("GET"));
-        request.setHTTPBody(nullptr);
-        request.clearHTTPContentType();
-        request.m_httpHeaderFields.remove(HTTPHeaderName::ContentLength);
-    }
+    request.redirectAsGETIfNeeded(*this, redirectResponse);
 
-    if (shouldClearReferrerOnHTTPSToHTTPRedirect && !request.url().protocolIs("https") && WebCore::protocolIs(request.httpReferrer(), "https"))
+    if (shouldClearReferrerOnHTTPSToHTTPRedirect && !request.url().protocolIs("https") && WTF::protocolIs(request.httpReferrer(), "https"))
         request.clearHTTPReferrer();
 
     if (!protocolHostAndPortAreEqual(request.url(), redirectResponse.url()))
@@ -156,12 +178,10 @@ void ResourceRequestBase::removeCredentials()
 {
     updateResourceRequest();
 
-    if (m_url.user().isEmpty() && m_url.pass().isEmpty())
+    if (!m_url.hasCredentials())
         return;
 
-    m_url.setUser(String());
-    m_url.setPass(String());
-
+    m_url.removeCredentials();
     m_platformRequestUpdated = false;
 }
 
@@ -218,6 +238,45 @@ void ResourceRequestBase::setFirstPartyForCookies(const URL& firstPartyForCookie
         return;
 
     m_firstPartyForCookies = firstPartyForCookies;
+
+    m_platformRequestUpdated = false;
+}
+
+bool ResourceRequestBase::isSameSite() const
+{
+    updateResourceRequest();
+
+    return m_sameSiteDisposition == SameSiteDisposition::SameSite;
+}
+
+void ResourceRequestBase::setIsSameSite(bool isSameSite)
+{
+    updateResourceRequest();
+
+    SameSiteDisposition newDisposition = isSameSite ? SameSiteDisposition::SameSite : SameSiteDisposition::CrossSite;
+    if (m_sameSiteDisposition == newDisposition)
+        return;
+
+    m_sameSiteDisposition = newDisposition;
+
+    m_platformRequestUpdated = false;
+}
+
+bool ResourceRequestBase::isTopSite() const
+{
+    updateResourceRequest();
+
+    return m_isTopSite;
+}
+
+void ResourceRequestBase::setIsTopSite(bool isTopSite)
+{
+    updateResourceRequest();
+
+    if (m_isTopSite == isTopSite)
+        return;
+
+    m_isTopSite = isTopSite;
 
     m_platformRequestUpdated = false;
 }
@@ -309,6 +368,15 @@ void ResourceRequestBase::clearHTTPContentType()
     m_platformRequestUpdated = false;
 }
 
+void ResourceRequestBase::clearPurpose()
+{
+    updateResourceRequest();
+
+    m_httpHeaderFields.remove(HTTPHeaderName::Purpose);
+
+    m_platformRequestUpdated = false;
+}
+
 String ResourceRequestBase::httpReferrer() const
 {
     return httpHeaderField(HTTPHeaderName::Referer);
@@ -321,7 +389,23 @@ bool ResourceRequestBase::hasHTTPReferrer() const
 
 void ResourceRequestBase::setHTTPReferrer(const String& httpReferrer)
 {
+    // https://w3c.github.io/webappsec-referrer-policy/#determine-requests-referrer
+    constexpr size_t maxLength = 4096;
+    if (httpReferrer.length() > maxLength) {
+        RELEASE_LOG(Loading, "Truncating HTTP referer");
+        String origin = SecurityOrigin::create(URL(URL(), httpReferrer))->toString();
+        if (origin.length() <= maxLength)
+            setHTTPHeaderField(HTTPHeaderName::Referer, origin);
+    } else
     setHTTPHeaderField(HTTPHeaderName::Referer, httpReferrer);
+}
+
+void ResourceRequestBase::setExistingHTTPReferrerToOriginString()
+{
+    if (!hasHTTPReferrer())
+        return;
+
+    setHTTPHeaderField(HTTPHeaderName::Referer, SecurityPolicy::referrerToOriginString(httpReferrer()));
 }
 
 void ResourceRequestBase::clearHTTPReferrer()
@@ -381,25 +465,6 @@ void ResourceRequestBase::clearHTTPUserAgent()
     m_platformRequestUpdated = false;
 }
 
-String ResourceRequestBase::httpAccept() const
-{
-    return httpHeaderField(HTTPHeaderName::Accept);
-}
-
-void ResourceRequestBase::setHTTPAccept(const String& httpAccept)
-{
-    setHTTPHeaderField(HTTPHeaderName::Accept, httpAccept);
-}
-
-void ResourceRequestBase::clearHTTPAccept()
-{
-    updateResourceRequest();
-
-    m_httpHeaderFields.remove(HTTPHeaderName::Accept);
-
-    m_platformRequestUpdated = false;
-}
-
 void ResourceRequestBase::clearHTTPAcceptEncoding()
 {
     updateResourceRequest();
@@ -427,9 +492,21 @@ void ResourceRequestBase::setResponseContentDispositionEncodingFallbackArray(con
 
 FormData* ResourceRequestBase::httpBody() const
 {
-    updateResourceRequest(UpdateHTTPBody);
+    updateResourceRequest(HTTPBodyUpdatePolicy::UpdateHTTPBody);
 
     return m_httpBody.get();
+}
+
+bool ResourceRequestBase::hasUpload() const
+{
+    if (auto* body = httpBody()) {
+        for (auto& element : body->elements()) {
+            if (WTF::holds_alternative<WebCore::FormDataElement::EncodedFileData>(element.data) || WTF::holds_alternative<WebCore::FormDataElement::EncodedBlobData>(element.data))
+                return true;
+        }
+    }
+
+    return false;
 }
 
 void ResourceRequestBase::setHTTPBody(RefPtr<FormData>&& httpBody)
@@ -523,6 +600,23 @@ void ResourceRequestBase::setHTTPHeaderFields(HTTPHeaderMap headerFields)
     m_platformRequestUpdated = false;
 }
 
+#if USE(SYSTEM_PREVIEW)
+bool ResourceRequestBase::isSystemPreview() const
+{
+    return m_systemPreviewInfo.hasValue();
+}
+
+SystemPreviewInfo ResourceRequestBase::systemPreviewInfo() const
+{
+    return m_systemPreviewInfo.valueOr(SystemPreviewInfo { });
+}
+
+void ResourceRequestBase::setSystemPreviewInfo(const SystemPreviewInfo& info)
+{
+    m_systemPreviewInfo = info;
+}
+#endif
+
 bool equalIgnoringHeaderFields(const ResourceRequestBase& a, const ResourceRequestBase& b)
 {
     if (a.url() != b.url())
@@ -535,6 +629,12 @@ bool equalIgnoringHeaderFields(const ResourceRequestBase& a, const ResourceReque
         return false;
 
     if (a.firstPartyForCookies() != b.firstPartyForCookies())
+        return false;
+
+    if (a.isSameSite() != b.isSameSite())
+        return false;
+
+    if (a.isTopSite() != b.isTopSite())
         return false;
 
     if (a.httpMethod() != b.httpMethod())
@@ -604,14 +704,14 @@ void ResourceRequestBase::setDefaultTimeoutInterval(double timeoutInterval)
 void ResourceRequestBase::updatePlatformRequest(HTTPBodyUpdatePolicy bodyPolicy) const
 {
     if (!m_platformRequestUpdated) {
-        //ASSERT(m_resourceRequestUpdated);
-        //const_cast<ResourceRequest&>(asResourceRequest()).doUpdatePlatformRequest();
+        ASSERT(m_resourceRequestUpdated);
+        const_cast<ResourceRequest&>(asResourceRequest()).doUpdatePlatformRequest();
         m_platformRequestUpdated = true;
     }
 
-    if (!m_platformRequestBodyUpdated && bodyPolicy == UpdateHTTPBody) {
-        //ASSERT(m_resourceRequestBodyUpdated);
-        //const_cast<ResourceRequest&>(asResourceRequest()).doUpdatePlatformHTTPBody();
+    if (!m_platformRequestBodyUpdated && bodyPolicy == HTTPBodyUpdatePolicy::UpdateHTTPBody) {
+        ASSERT(m_resourceRequestBodyUpdated);
+        const_cast<ResourceRequest&>(asResourceRequest()).doUpdatePlatformHTTPBody();
         m_platformRequestBodyUpdated = true;
     }
 }
@@ -619,14 +719,14 @@ void ResourceRequestBase::updatePlatformRequest(HTTPBodyUpdatePolicy bodyPolicy)
 void ResourceRequestBase::updateResourceRequest(HTTPBodyUpdatePolicy bodyPolicy) const
 {
     if (!m_resourceRequestUpdated) {
-        //ASSERT(m_platformRequestUpdated);
-        //const_cast<ResourceRequest&>(asResourceRequest()).doUpdateResourceRequest();
+        ASSERT(m_platformRequestUpdated);
+        const_cast<ResourceRequest&>(asResourceRequest()).doUpdateResourceRequest();
         m_resourceRequestUpdated = true;
     }
 
-    if (!m_resourceRequestBodyUpdated && bodyPolicy == UpdateHTTPBody) {
-        //ASSERT(m_platformRequestBodyUpdated);
-        //const_cast<ResourceRequest&>(asResourceRequest()).doUpdateResourceHTTPBody();
+    if (!m_resourceRequestBodyUpdated && bodyPolicy == HTTPBodyUpdatePolicy::UpdateHTTPBody) {
+        ASSERT(m_platformRequestBodyUpdated);
+        const_cast<ResourceRequest&>(asResourceRequest()).doUpdateResourceHTTPBody();
         m_resourceRequestBodyUpdated = true;
     }
 }

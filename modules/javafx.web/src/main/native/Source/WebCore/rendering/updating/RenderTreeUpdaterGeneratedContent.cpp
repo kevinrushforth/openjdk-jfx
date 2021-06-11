@@ -34,6 +34,7 @@
 #include "RenderImage.h"
 #include "RenderQuote.h"
 #include "RenderTreeUpdater.h"
+#include "RenderView.h"
 #include "StyleTreeResolver.h"
 
 namespace WebCore {
@@ -70,12 +71,16 @@ void RenderTreeUpdater::GeneratedContent::updateQuotesUpTo(RenderQuote* lastQuot
 
 static void createContentRenderers(RenderTreeBuilder& builder, RenderElement& pseudoRenderer, const RenderStyle& style)
 {
-    ASSERT(style.contentData());
-
-    for (const ContentData* content = style.contentData(); content; content = content->next()) {
-        auto child = content->createContentRenderer(pseudoRenderer.document(), style);
-        if (pseudoRenderer.isChildAllowed(*child, style))
-            builder.attach(pseudoRenderer, WTFMove(child));
+    if (auto* contentData = style.contentData()) {
+        for (const ContentData* content = contentData; content; content = content->next()) {
+            auto child = content->createContentRenderer(pseudoRenderer.document(), style);
+            if (pseudoRenderer.isChildAllowed(*child, style))
+                builder.attach(pseudoRenderer, WTFMove(child));
+        }
+    } else {
+        // The only valid scenario where this method is called without the "content" property being set
+        // is the case where a pseudo-element has animations set on it via the Web Animations API.
+        ASSERT(is<PseudoElement>(pseudoRenderer.element()) && downcast<PseudoElement>(*pseudoRenderer.element()).isTargetedByKeyframeEffectRequiringPseudoElement());
     }
 }
 
@@ -89,40 +94,29 @@ static void updateStyleForContentRenderers(RenderElement& pseudoRenderer, const 
     }
 }
 
-void RenderTreeUpdater::GeneratedContent::updatePseudoElement(Element& current, const std::optional<Style::ElementUpdate>& update, PseudoId pseudoId)
+void RenderTreeUpdater::GeneratedContent::updatePseudoElement(Element& current, const Optional<Style::ElementUpdate>& update, PseudoId pseudoId)
 {
-    PseudoElement* pseudoElement = pseudoId == BEFORE ? current.beforePseudoElement() : current.afterPseudoElement();
+    PseudoElement* pseudoElement = pseudoId == PseudoId::Before ? current.beforePseudoElement() : current.afterPseudoElement();
 
     if (auto* renderer = pseudoElement ? pseudoElement->renderer() : nullptr)
         m_updater.renderTreePosition().invalidateNextSibling(*renderer);
 
-    if (!needsPseudoElement(update)) {
+    if (!needsPseudoElement(update) && (!pseudoElement || !pseudoElement->isTargetedByKeyframeEffectRequiringPseudoElement())) {
         if (pseudoElement) {
-            if (pseudoId == BEFORE)
-                removeBeforePseudoElement(current);
+            if (pseudoId == PseudoId::Before)
+                removeBeforePseudoElement(current, m_updater.m_builder);
             else
-                removeAfterPseudoElement(current);
+                removeAfterPseudoElement(current, m_updater.m_builder);
         }
         return;
-    }
-
-    RefPtr<PseudoElement> newPseudoElement;
-    if (!pseudoElement) {
-        newPseudoElement = PseudoElement::create(current, pseudoId);
-        pseudoElement = newPseudoElement.get();
     }
 
     if (update->change == Style::NoChange)
         return;
 
-    if (newPseudoElement) {
-        if (pseudoId == BEFORE)
-            current.setBeforePseudoElement(newPseudoElement.releaseNonNull());
-        else
-            current.setAfterPseudoElement(newPseudoElement.releaseNonNull());
-    }
+    pseudoElement = &current.ensurePseudoElement(pseudoId);
 
-    if (update->style->display() == CONTENTS) {
+    if (update->style->display() == DisplayType::Contents) {
         // For display:contents we create an inline wrapper that inherits its
         // style from the display:contents style.
         auto contentsStyle = RenderStyle::createPtr();
@@ -154,7 +148,7 @@ void RenderTreeUpdater::GeneratedContent::updatePseudoElement(Element& current, 
     m_updater.m_builder.updateAfterDescendants(*pseudoElementRenderer);
 }
 
-bool RenderTreeUpdater::GeneratedContent::needsPseudoElement(const std::optional<Style::ElementUpdate>& update)
+bool RenderTreeUpdater::GeneratedContent::needsPseudoElement(const Optional<Style::ElementUpdate>& update)
 {
     if (!update)
         return false;
@@ -165,21 +159,21 @@ bool RenderTreeUpdater::GeneratedContent::needsPseudoElement(const std::optional
     return true;
 }
 
-void RenderTreeUpdater::GeneratedContent::removeBeforePseudoElement(Element& element)
+void RenderTreeUpdater::GeneratedContent::removeBeforePseudoElement(Element& element, RenderTreeBuilder& builder)
 {
     auto* pseudoElement = element.beforePseudoElement();
     if (!pseudoElement)
         return;
-    tearDownRenderers(*pseudoElement, TeardownType::Full);
+    tearDownRenderers(*pseudoElement, TeardownType::Full, builder);
     element.clearBeforePseudoElement();
 }
 
-void RenderTreeUpdater::GeneratedContent::removeAfterPseudoElement(Element& element)
+void RenderTreeUpdater::GeneratedContent::removeAfterPseudoElement(Element& element, RenderTreeBuilder& builder)
 {
     auto* pseudoElement = element.afterPseudoElement();
     if (!pseudoElement)
         return;
-    tearDownRenderers(*pseudoElement, TeardownType::Full);
+    tearDownRenderers(*pseudoElement, TeardownType::Full, builder);
     element.clearAfterPseudoElement();
 }
 

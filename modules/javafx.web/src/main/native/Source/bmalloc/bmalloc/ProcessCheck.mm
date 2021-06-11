@@ -20,35 +20,60 @@
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
  * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #import "ProcessCheck.h"
 
-#if !BPLATFORM(WATCHOS)
-
 #import <Foundation/Foundation.h>
+#import <mutex>
 
 namespace bmalloc {
 
+#if !BPLATFORM(WATCHOS)
 bool gigacageEnabledForProcess()
 {
-    static NSString *appName = [[NSBundle mainBundle] bundleIdentifier];
+    // Note that this function is only called once.
+    // If we wanted to make it efficient to call more than once, we could memoize the result in a global boolean.
+
+    NSString *appName = [[NSBundle mainBundle] bundleIdentifier];
     if (appName) {
-        static bool isWebProcess = [appName isEqualToString:@"com.apple.WebKit.WebContent.Development"]
-            || [appName isEqualToString:@"com.apple.WebKit.WebContent"]
-            || [appName isEqualToString:@"com.apple.WebProcess"];
+        bool isWebProcess = [appName hasPrefix:@"com.apple.WebKit.WebContent"];
         return isWebProcess;
     }
 
-    static NSString *processName = [[NSProcessInfo processInfo] processName];
-    static bool isOptInBinary = [processName isEqualToString:@"jsc"]
+    NSString *processName = [[NSProcessInfo processInfo] processName];
+    bool isOptInBinary = [processName isEqualToString:@"jsc"]
+        || [processName isEqualToString:@"DumpRenderTree"]
         || [processName isEqualToString:@"wasm"]
-        || [processName hasPrefix:@"test"];
+        || [processName hasPrefix:@"test"]
+        || [processName hasPrefix:@"Test"];
 
     return isOptInBinary;
 }
+#endif // !BPLATFORM(WATCHOS)
+
+#if BPLATFORM(IOS_FAMILY)
+bool shouldProcessUnconditionallyUseBmalloc()
+{
+    static bool result;
+    static std::once_flag onceFlag;
+    std::call_once(onceFlag, [&] () {
+        if (NSString *appName = [[NSBundle mainBundle] bundleIdentifier]) {
+            auto contains = [&] (NSString *string) {
+                return [appName rangeOfString:string options:NSCaseInsensitiveSearch].location != NSNotFound;
+            };
+            result = contains(@"com.apple.WebKit") || contains(@"safari");
+        } else {
+            NSString *processName = [[NSProcessInfo processInfo] processName];
+            result = [processName isEqualToString:@"jsc"]
+                || [processName isEqualToString:@"wasm"]
+                || [processName hasPrefix:@"test"];
+        }
+    });
+
+    return result;
+}
+#endif // BPLATFORM(IOS_FAMILY)
 
 }
-
-#endif

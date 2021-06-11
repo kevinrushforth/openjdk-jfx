@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,7 +31,7 @@
 #include "CallLinkInfo.h"
 #include "CodeBlock.h"
 #include "FullCodeOrigin.h"
-#include "JSCInlines.h"
+#include "JSCJSValueInlines.h"
 #include "LinkBuffer.h"
 
 namespace JSC {
@@ -45,9 +45,7 @@ PolymorphicCallNode::~PolymorphicCallNode()
 void PolymorphicCallNode::unlink(VM& vm)
 {
     if (m_callLinkInfo) {
-        if (Options::dumpDisassembly())
-            dataLog("Unlinking polymorphic call at ", m_callLinkInfo->callReturnLocation(), ", ", m_callLinkInfo->codeOrigin(), "\n");
-
+        dataLogLnIf(Options::dumpDisassembly(), "Unlinking polymorphic call at ", m_callLinkInfo->callReturnLocation(), ", ", m_callLinkInfo->codeOrigin());
         m_callLinkInfo->unlink(vm);
     }
 
@@ -57,9 +55,6 @@ void PolymorphicCallNode::unlink(VM& vm)
 
 void PolymorphicCallNode::clearCallLinkInfo()
 {
-    if (Options::dumpDisassembly())
-        dataLog("Clearing call link info for polymorphic call at ", m_callLinkInfo->callReturnLocation(), ", ", m_callLinkInfo->codeOrigin(), "\n");
-
     m_callLinkInfo = nullptr;
 }
 
@@ -69,20 +64,21 @@ void PolymorphicCallCase::dump(PrintStream& out) const
 }
 
 PolymorphicCallStubRoutine::PolymorphicCallStubRoutine(
-    const MacroAssemblerCodeRef& codeRef, VM& vm, const JSCell* owner, ExecState* callerFrame,
+    const MacroAssemblerCodeRef<JITStubRoutinePtrTag>& codeRef, VM& vm, const JSCell* owner, CallFrame* callerFrame,
     CallLinkInfo& info, const Vector<PolymorphicCallCase>& cases,
-    std::unique_ptr<uint32_t[]> fastCounts)
+    UniqueArray<uint32_t>&& fastCounts)
     : GCAwareJITStubRoutine(codeRef, vm)
+    , m_variants(cases.size())
     , m_fastCounts(WTFMove(fastCounts))
 {
-    for (PolymorphicCallCase callCase : cases) {
-        m_variants.append(WriteBarrier<JSCell>(vm, owner, callCase.variant().rawCalleeCell()));
+    for (unsigned index = 0; index < cases.size(); ++index) {
+        const PolymorphicCallCase& callCase = cases[index];
+        m_variants[index].set(vm, owner, callCase.variant().rawCalleeCell());
         if (shouldDumpDisassemblyFor(callerFrame->codeBlock()))
             dataLog("Linking polymorphic call in ", FullCodeOrigin(callerFrame->codeBlock(), callerFrame->codeOrigin()), " to ", callCase.variant(), ", codeBlock = ", pointerDump(callCase.codeBlock()), "\n");
         if (CodeBlock* codeBlock = callCase.codeBlock())
             codeBlock->linkIncomingPolymorphicCall(callerFrame, m_callNodes.add(&info));
     }
-    m_variants.shrinkToFit();
     WTF::storeStoreFence();
 }
 
@@ -96,10 +92,22 @@ CallVariantList PolymorphicCallStubRoutine::variants() const
     return result;
 }
 
+bool PolymorphicCallStubRoutine::hasEdges() const
+{
+    // The FTL does not count edges in its poly call stub routines. If the FTL went poly call, then
+    // it's not meaningful to keep profiling - we can just leave it at that. Remember, the FTL would
+    // have had full edge profiling from the DFG, and based on this information, it would have
+    // decided to go poly.
+    //
+    // There probably are very-difficult-to-imagine corner cases where the FTL not doing edge
+    // profiling is bad for polyvariant inlining. But polyvariant inlining is profitable sometimes
+    // while not having to increment counts is profitable always. So, we let the FTL run faster and
+    // not keep counts.
+    return !!m_fastCounts;
+}
+
 CallEdgeList PolymorphicCallStubRoutine::edges() const
 {
-    // We wouldn't have these if this was an FTL stub routine. We shouldn't be asking for profiling
-    // from the FTL.
     RELEASE_ASSERT(m_fastCounts);
 
     CallEdgeList result;
@@ -118,13 +126,13 @@ void PolymorphicCallStubRoutine::clearCallNodesFor(CallLinkInfo* info)
     }
 }
 
-bool PolymorphicCallStubRoutine::visitWeak(VM&)
+bool PolymorphicCallStubRoutine::visitWeak(VM& vm)
 {
-    for (auto& variant : m_variants) {
-        if (!Heap::isMarked(variant.get()))
-            return false;
-    }
-    return true;
+    bool isStillLive = true;
+    forEachDependentCell([&](JSCell* cell) {
+        isStillLive &= vm.heap.isMarked(cell);
+    });
+    return isStillLive;
 }
 
 void PolymorphicCallStubRoutine::markRequiredObjectsInternal(SlotVisitor& visitor)

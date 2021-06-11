@@ -36,16 +36,6 @@ RenderSVGBlock::RenderSVGBlock(SVGGraphicsElement& element, RenderStyle&& style)
 {
 }
 
-LayoutRect RenderSVGBlock::visualOverflowRect() const
-{
-    LayoutRect borderRect = borderBoxRect();
-
-    if (const ShadowData* textShadow = style().textShadow())
-        textShadow->adjustRectForShadow(borderRect);
-
-    return borderRect;
-}
-
 void RenderSVGBlock::updateFromStyle()
 {
     RenderBlockFlow::updateFromStyle();
@@ -79,10 +69,23 @@ void RenderSVGBlock::willBeDestroyed()
 
 void RenderSVGBlock::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
-    if (diff == StyleDifferenceLayout)
+    if (diff == StyleDifference::Layout)
         setNeedsBoundariesUpdate();
     RenderBlockFlow::styleDidChange(diff, oldStyle);
     SVGResourcesCache::clientStyleChanged(*this, diff, style());
+}
+
+void RenderSVGBlock::computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats)
+{
+    RenderBlockFlow::computeOverflow(oldClientAfterEdge, recomputeFloats);
+
+    const auto* textShadow = style().textShadow();
+    if (!textShadow)
+        return;
+
+    LayoutRect borderRect = borderBoxRect();
+    textShadow->adjustRectForShadow(borderRect);
+    addVisualOverflow(snappedIntRect(borderRect));
 }
 
 }

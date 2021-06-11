@@ -35,7 +35,7 @@ namespace WebCore {
 
 // WaveShaperDSPKernel is an AudioDSPKernel and is responsible for non-linear distortion on one channel.
 
-class WaveShaperDSPKernel : public AudioDSPKernel {
+class WaveShaperDSPKernel final : public AudioDSPKernel {
 public:
     explicit WaveShaperDSPKernel(WaveShaperProcessor*);
 
@@ -48,7 +48,7 @@ public:
     // Oversampling requires more resources, so let's only allocate them if needed.
     void lazyInitializeOversampling();
 
-protected:
+private:
     // Apply the shaping curve.
     void processCurve(const float* source, float* dest, size_t framesToProcess);
 

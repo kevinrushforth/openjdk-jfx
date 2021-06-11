@@ -25,12 +25,11 @@
 
 #pragma once
 
-#if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-
+#include "AnimationFrameRate.h"
 #include "PlatformScreen.h"
 #include <wtf/HashSet.h>
 #include <wtf/Lock.h>
-#include <wtf/RefCounted.h>
+#include <wtf/ThreadSafeRefCounted.h>
 #include <wtf/RefPtr.h>
 
 namespace WebCore {
@@ -38,14 +37,21 @@ namespace WebCore {
 class DisplayAnimationClient;
 class DisplayRefreshMonitorClient;
 
-class DisplayRefreshMonitor : public RefCounted<DisplayRefreshMonitor> {
+class DisplayRefreshMonitor : public ThreadSafeRefCounted<DisplayRefreshMonitor> {
 public:
     static RefPtr<DisplayRefreshMonitor> create(DisplayRefreshMonitorClient&);
     WEBCORE_EXPORT virtual ~DisplayRefreshMonitor();
 
+    virtual void displayLinkFired() { }
+
+    virtual void setPreferredFramesPerSecond(FramesPerSecond) { }
+
     // Return true if callback request was scheduled, false if it couldn't be
     // (e.g., hardware refresh is not available)
     virtual bool requestRefreshCallback() = 0;
+
+    virtual void stop() { }
+
     void windowScreenDidChange(PlatformDisplayID);
 
     bool hasClients() const { return m_clients.size(); }
@@ -66,6 +72,8 @@ protected:
     WEBCORE_EXPORT explicit DisplayRefreshMonitor(PlatformDisplayID);
     WEBCORE_EXPORT static void handleDisplayRefreshedNotificationOnMainThread(void* data);
 
+    friend class DisplayRefreshMonitorManager;
+
     Lock& mutex() { return m_mutex; }
 
     bool isActive() const { return m_active; }
@@ -76,6 +84,8 @@ protected:
 
     bool isPreviousFrameDone() const { return m_previousFrameDone; }
     void setIsPreviousFrameDone(bool done) { m_previousFrameDone = done; }
+
+    virtual bool hasRequestedRefreshCallback() const { return false; }
 
 private:
     void displayDidRefresh();
@@ -91,6 +101,3 @@ private:
 };
 
 }
-
-#endif // USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-

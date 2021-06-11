@@ -32,6 +32,7 @@
 #include "HTMLNames.h"
 #include "RenderView.h"
 #include "Settings.h"
+#include <wtf/IsoMallocInlines.h>
 #include <wtf/StackStats.h>
 
 namespace WebCore {
@@ -62,7 +63,7 @@ bool RenderIFrame::isInlineBlockOrInlineTable() const
 
 bool RenderIFrame::requiresLayer() const
 {
-    return RenderFrameBase::requiresLayer() || style().resize() != RESIZE_NONE;
+    return RenderFrameBase::requiresLayer() || style().resize() != Resize::None;
 }
 
 RenderView* RenderIFrame::contentRootRenderer() const

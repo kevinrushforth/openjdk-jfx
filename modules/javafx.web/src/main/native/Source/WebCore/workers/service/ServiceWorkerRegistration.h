@@ -29,17 +29,19 @@
 
 #include "ActiveDOMObject.h"
 #include "EventTarget.h"
-#include "JSDOMPromiseDeferred.h"
 #include "SWClientConnection.h"
 #include "ServiceWorkerRegistrationData.h"
+#include "Timer.h"
 
 namespace WebCore {
 
+class DeferredPromise;
 class ScriptExecutionContext;
 class ServiceWorker;
 class ServiceWorkerContainer;
 
 class ServiceWorkerRegistration final : public RefCounted<ServiceWorkerRegistration>, public EventTargetWithInlineData, public ActiveDOMObject {
+    WTF_MAKE_ISO_ALLOCATED(ServiceWorkerRegistration);
 public:
     static Ref<ServiceWorkerRegistration> getOrCreate(ScriptExecutionContext&, Ref<ServiceWorkerContainer>&&, ServiceWorkerRegistrationData&&);
 
@@ -51,7 +53,7 @@ public:
     ServiceWorker* waiting();
     ServiceWorker* active();
 
-    ServiceWorker* getNewestWorker();
+    ServiceWorker* getNewestWorker() const;
 
     const String& scope() const;
 
@@ -66,19 +68,16 @@ public:
     void update(Ref<DeferredPromise>&&);
     void unregister(Ref<DeferredPromise>&&);
 
-    void softUpdate();
-
     using RefCounted::ref;
     using RefCounted::deref;
 
     const ServiceWorkerRegistrationData& data() const { return m_registrationData; }
 
     void updateStateFromServer(ServiceWorkerRegistrationState, RefPtr<ServiceWorker>&&);
-    void scheduleTaskToFireUpdateFoundEvent();
+    void queueTaskToFireUpdateFoundEvent();
 
 private:
     ServiceWorkerRegistration(ScriptExecutionContext&, Ref<ServiceWorkerContainer>&&, ServiceWorkerRegistrationData&&);
-    void updatePendingActivityForEventDispatch();
 
     EventTargetInterface eventTargetInterface() const final;
     ScriptExecutionContext* scriptExecutionContext() const final;
@@ -87,8 +86,8 @@ private:
 
     // ActiveDOMObject.
     const char* activeDOMObjectName() const final;
-    bool canSuspendForDocumentSuspension() const final;
     void stop() final;
+    bool virtualHasPendingActivity() const final;
 
     ServiceWorkerRegistrationData m_registrationData;
     Ref<ServiceWorkerContainer> m_container;
@@ -96,9 +95,6 @@ private:
     RefPtr<ServiceWorker> m_installingWorker;
     RefPtr<ServiceWorker> m_waitingWorker;
     RefPtr<ServiceWorker> m_activeWorker;
-
-    bool m_isStopped { false };
-    RefPtr<PendingActivity<ServiceWorkerRegistration>> m_pendingActivityForEventDispatch;
 };
 
 } // namespace WebCore

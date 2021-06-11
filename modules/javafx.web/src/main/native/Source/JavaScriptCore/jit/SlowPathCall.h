@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -34,25 +34,22 @@ namespace JSC {
 
 class JITSlowPathCall {
 public:
-    JITSlowPathCall(JIT* jit, Instruction* pc, SlowPathFunction stub)
+    JITSlowPathCall(JIT* jit, const Instruction* pc, SlowPathFunction slowPathFunction)
         : m_jit(jit)
-        , m_stub(stub)
+        , m_slowPathFunction(slowPathFunction)
         , m_pc(pc)
     {
+        assertIsCFunctionPtr(slowPathFunction);
     }
 
     JIT::Call call()
     {
 #if ENABLE(OPCODE_SAMPLING)
         if (m_jit->m_bytecodeOffset != std::numeric_limits<unsigned>::max())
-            m_jit->sampleInstruction(m_jit->m_codeBlock->instructions().begin() + m_jit->m_bytecodeOffset, true);
+            m_jit->sampleInstruction(&m_jit->m_codeBlock->instructions()[m_jit->m_bytecodeOffset], true);
 #endif
         m_jit->updateTopCallFrame();
-#if CPU(X86) && USE(JSVALUE32_64)
-        m_jit->addPtr(MacroAssembler::TrustedImm32(-8), MacroAssembler::stackPointerRegister);
-        m_jit->push(JIT::TrustedImm32(JIT::TrustedImmPtr(m_pc)));
-        m_jit->push(JIT::callFrameRegister);
-#elif CPU(X86_64) && OS(WINDOWS)
+#if CPU(X86_64) && OS(WINDOWS)
         m_jit->addPtr(MacroAssembler::TrustedImm32(-16), MacroAssembler::stackPointerRegister);
         m_jit->move(MacroAssembler::stackPointerRegister, JIT::argumentGPR0);
         m_jit->move(JIT::callFrameRegister, JIT::argumentGPR1);
@@ -61,19 +58,19 @@ public:
         m_jit->move(JIT::callFrameRegister, JIT::argumentGPR0);
         m_jit->move(JIT::TrustedImmPtr(m_pc), JIT::argumentGPR1);
 #endif
-        JIT::Call call = m_jit->call();
-        m_jit->m_calls.append(CallRecord(call, m_jit->m_bytecodeOffset, m_stub.value()));
+        JIT::Call call = m_jit->call(OperationPtrTag);
+        m_jit->m_calls.append(CallRecord(call, m_jit->m_bytecodeIndex, FunctionPtr<OperationPtrTag>(m_slowPathFunction)));
 
-#if CPU(X86) && USE(JSVALUE32_64)
-        m_jit->addPtr(MacroAssembler::TrustedImm32(16), MacroAssembler::stackPointerRegister);
-#elif CPU(X86_64) && OS(WINDOWS)
+#if CPU(X86_64) && OS(WINDOWS)
         m_jit->pop(JIT::regT0); // vPC
         m_jit->pop(JIT::regT1); // callFrame register
+        static_assert(JIT::regT0 == GPRInfo::returnValueGPR);
+        static_assert(JIT::regT1 == GPRInfo::returnValueGPR2);
 #endif
 
 #if ENABLE(OPCODE_SAMPLING)
         if (m_jit->m_bytecodeOffset != std::numeric_limits<unsigned>::max())
-            m_jit->sampleInstruction(m_jit->m_codeBlock->instructions().begin() + m_jit->m_bytecodeOffset, false);
+            m_jit->sampleInstruction(&m_jit->m_codeBlock->instructions()[m_jit->m_bytecodeOffset], false);
 #endif
 
         m_jit->exceptionCheck();
@@ -82,8 +79,8 @@ public:
 
 private:
     JIT* m_jit;
-    FunctionPtr m_stub;
-    Instruction* m_pc;
+    SlowPathFunction m_slowPathFunction;
+    const Instruction* m_pc;
 };
 
 } // namespace JS

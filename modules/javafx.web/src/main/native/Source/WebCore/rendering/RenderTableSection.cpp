@@ -28,9 +28,9 @@
 #include "Document.h"
 #include "HitTestResult.h"
 #include "HTMLNames.h"
-#include "LayoutState.h"
 #include "PaintInfo.h"
 #include "RenderChildIterator.h"
+#include "RenderLayoutState.h"
 #include "RenderTableCell.h"
 #include "RenderTableCol.h"
 #include "RenderTableRow.h"
@@ -214,24 +214,22 @@ void RenderTableSection::addCell(RenderTableCell* cell, RenderTableRow* row)
 static LayoutUnit resolveLogicalHeightForRow(const Length& rowLogicalHeight)
 {
     if (rowLogicalHeight.isFixed())
-        return rowLogicalHeight.value();
+        return LayoutUnit(rowLogicalHeight.value());
     if (rowLogicalHeight.isCalculated())
-        return rowLogicalHeight.nonNanCalculatedValue(0);
+        return LayoutUnit(rowLogicalHeight.nonNanCalculatedValue(0));
     return 0;
 }
 
 LayoutUnit RenderTableSection::calcRowLogicalHeight()
 {
-#ifndef NDEBUG
-    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
-#endif
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 
     ASSERT(!needsLayout());
 
     RenderTableCell* cell;
 
     // We ignore the border-spacing on any non-top section as it is already included in the previous section's last row position.
-    LayoutUnit spacing = 0;
+    LayoutUnit spacing;
     if (this == table()->topSection())
         spacing = table()->vBorderSpacing();
 
@@ -244,10 +242,10 @@ LayoutUnit RenderTableSection::calcRowLogicalHeight()
 
     for (unsigned r = 0; r < totalRows; r++) {
         m_grid[r].baseline = 0;
-        LayoutUnit baselineDescent = 0;
+        LayoutUnit baselineDescent;
 
         // Our base size is the biggest logical height from our cells' styles (excluding row spanning cells).
-        m_rowPos[r + 1] = std::max(m_rowPos[r] + resolveLogicalHeightForRow(m_grid[r].logicalHeight), LayoutUnit::fromPixel(0));
+        m_rowPos[r + 1] = std::max(m_rowPos[r] + resolveLogicalHeightForRow(m_grid[r].logicalHeight), 0_lu);
 
         Row& row = m_grid[r].row;
         unsigned totalCols = row.size();
@@ -285,9 +283,9 @@ LayoutUnit RenderTableSection::calcRowLogicalHeight()
                 // For row spanning cells, |r| is the last row in the span.
                 unsigned cellStartRow = cell->rowIndex();
 
-                if (cell->hasOverrideLogicalContentHeight()) {
+                if (cell->hasOverrideContentLogicalHeight()) {
                     cell->clearIntrinsicPadding();
-                    cell->clearOverrideSize();
+                    cell->clearOverrideContentSize();
                     cell->setChildNeedsLayout(MarkOnlyThis);
                     cell->layoutIfNeeded();
                 }
@@ -304,7 +302,7 @@ LayoutUnit RenderTableSection::calcRowLogicalHeight()
                         // The descent of a cell that spans multiple rows does not affect the height of the first row it spans, so don't let it
                         // become the baseline descent applied to the rest of the row. Also we don't account for the baseline descent of
                         // non-spanning cells when computing a spanning cell's extent.
-                        LayoutUnit cellStartRowBaselineDescent = 0;
+                        LayoutUnit cellStartRowBaselineDescent;
                         if (cell->rowSpan() == 1) {
                             baselineDescent = std::max(baselineDescent, cellLogicalHeight - baselinePosition);
                             cellStartRowBaselineDescent = baselineDescent;
@@ -318,7 +316,7 @@ LayoutUnit RenderTableSection::calcRowLogicalHeight()
         // Add the border-spacing to our final position.
         // Use table border-spacing even in non-top sections
         spacing = table()->vBorderSpacing();
-        m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : LayoutUnit::fromPixel(0);
+        m_rowPos[r + 1] += m_grid[r].rowRenderer ? spacing : 0_lu;
         m_rowPos[r + 1] = std::max(m_rowPos[r + 1], m_rowPos[r]);
     }
 
@@ -383,15 +381,15 @@ void RenderTableSection::distributeExtraLogicalHeightToPercentRows(LayoutUnit& e
 
     unsigned totalRows = m_grid.size();
     LayoutUnit totalHeight = m_rowPos[totalRows] + extraLogicalHeight;
-    LayoutUnit totalLogicalHeightAdded = 0;
+    LayoutUnit totalLogicalHeightAdded;
     totalPercent = std::min(totalPercent, 100);
     LayoutUnit rowHeight = m_rowPos[1] - m_rowPos[0];
     for (unsigned r = 0; r < totalRows; ++r) {
         if (totalPercent > 0 && m_grid[r].logicalHeight.isPercent()) {
-            LayoutUnit toAdd = std::min<LayoutUnit>(extraLogicalHeight, (totalHeight * m_grid[r].logicalHeight.percent() / 100) - rowHeight);
+            LayoutUnit toAdd = std::min(extraLogicalHeight, LayoutUnit((totalHeight * m_grid[r].logicalHeight.percent() / 100) - rowHeight));
             // If toAdd is negative, then we don't want to shrink the row (this bug
             // affected Outlook Web Access).
-            toAdd = std::max(LayoutUnit::fromPixel(0), toAdd);
+            toAdd = std::max(0_lu, toAdd);
             totalLogicalHeightAdded += toAdd;
             extraLogicalHeight -= toAdd;
             totalPercent -= m_grid[r].logicalHeight.percent();
@@ -408,7 +406,7 @@ void RenderTableSection::distributeExtraLogicalHeightToAutoRows(LayoutUnit& extr
     if (!autoRowsCount)
         return;
 
-    LayoutUnit totalLogicalHeightAdded = 0;
+    LayoutUnit totalLogicalHeightAdded;
     for (unsigned r = 0; r < m_grid.size(); ++r) {
         if (autoRowsCount > 0 && m_grid[r].logicalHeight.isAuto()) {
             // Recomputing |extraLogicalHeightForRow| guarantees that we properly ditribute round |extraLogicalHeight|.
@@ -430,7 +428,7 @@ void RenderTableSection::distributeRemainingExtraLogicalHeight(LayoutUnit& extra
 
     // FIXME: m_rowPos[totalRows] - m_rowPos[0] is the total rows' size.
     LayoutUnit totalRowSize = m_rowPos[totalRows];
-    LayoutUnit totalLogicalHeightAdded = 0;
+    LayoutUnit totalLogicalHeightAdded;
     LayoutUnit previousRowPosition = m_rowPos[0];
     for (unsigned r = 0; r < totalRows; r++) {
         // weight with the original height
@@ -524,7 +522,7 @@ void RenderTableSection::relayoutCellIfFlexed(RenderTableCell& cell, int rowInde
         // Alignment within a cell is based off the calculated
     // height, which becomes irrelevant once the cell has
     // been resized based off its percentage.
-    cell.setOverrideLogicalContentHeightFromRowHeight(rowHeight);
+    cell.setOverrideContentLogicalHeightFromRowHeight(rowHeight);
     cell.layoutIfNeeded();
 
     if (!cell.isBaselineAligned())
@@ -538,9 +536,7 @@ void RenderTableSection::relayoutCellIfFlexed(RenderTableCell& cell, int rowInde
 
 void RenderTableSection::layoutRows()
 {
-#ifndef NDEBUG
-    SetLayoutNeededForbiddenScope layoutForbiddenScope(this);
-#endif
+    SetLayoutNeededForbiddenScope layoutForbiddenScope(*this);
 
     ASSERT(!needsLayout());
 
@@ -560,7 +556,7 @@ void RenderTableSection::layoutRows()
         if (RenderTableRow* rowRenderer = m_grid[r].rowRenderer) {
             // FIXME: the x() position of the row should be table()->hBorderSpacing() so that it can
             // report the correct offsetLeft. However, that will require a lot of rebaselining of test results.
-            rowRenderer->setLocation(LayoutPoint(0, m_rowPos[r]));
+            rowRenderer->setLocation(LayoutPoint(0_lu, m_rowPos[r]));
             rowRenderer->setLogicalWidth(logicalWidth());
             rowRenderer->setLogicalHeight(m_rowPos[r + 1] - m_rowPos[r] - vspacing);
             rowRenderer->updateLayerTransform();
@@ -568,7 +564,7 @@ void RenderTableSection::layoutRows()
             rowRenderer->addVisualEffectOverflow();
         }
 
-        LayoutUnit rowHeightIncreaseForPagination = 0;
+        LayoutUnit rowHeightIncreaseForPagination;
 
         for (unsigned c = 0; c < nEffCols; c++) {
             CellStruct& cs = cellAt(r, c);
@@ -647,7 +643,7 @@ void RenderTableSection::computeOverflowFromCells(unsigned totalRows, unsigned n
     unsigned totalCellsCount = nEffCols * totalRows;
     unsigned maxAllowedOverflowingCellsCount = totalCellsCount < gMinTableSizeToUseFastPaintPathWithOverflowingCell ? 0 : gMaxAllowedOverflowingCellRatioForFastPaintPath * totalCellsCount;
 
-#ifndef NDEBUG
+#if ASSERT_ENABLED
     bool hasOverflowingCell = false;
 #endif
     // Now that our height has been determined, add in overflow from cells.
@@ -660,7 +656,7 @@ void RenderTableSection::computeOverflowFromCells(unsigned totalRows, unsigned n
             if (r < totalRows - 1 && cell == primaryCellAt(r + 1, c))
                 continue;
             addOverflowFromChild(cell);
-#ifndef NDEBUG
+#if ASSERT_ENABLED
             hasOverflowingCell |= cell->hasVisualOverflow();
 #endif
             if (cell->hasVisualOverflow() && !m_forceSlowPaintPathWithOverflowingCell) {
@@ -683,18 +679,18 @@ LayoutUnit RenderTableSection::calcOuterBorderBefore() const
     if (!m_grid.size() || !totalCols)
         return 0;
 
-    LayoutUnit borderWidth = 0;
+    LayoutUnit borderWidth;
 
     const BorderValue& sb = style().borderBefore();
-    if (sb.style() == BHIDDEN)
+    if (sb.style() == BorderStyle::Hidden)
         return -1;
-    if (sb.style() > BHIDDEN)
+    if (sb.style() > BorderStyle::Hidden)
         borderWidth = sb.width();
 
     const BorderValue& rb = firstRow()->style().borderBefore();
-    if (rb.style() == BHIDDEN)
+    if (rb.style() == BorderStyle::Hidden)
         return -1;
-    if (rb.style() > BHIDDEN && rb.width() > borderWidth)
+    if (rb.style() > BorderStyle::Hidden && rb.width() > borderWidth)
         borderWidth = rb.width();
 
     bool allHidden = true;
@@ -707,18 +703,18 @@ LayoutUnit RenderTableSection::calcOuterBorderBefore() const
         RenderTableCol* colGroup = table()->colElement(c);
         if (colGroup) {
             const BorderValue& gb = colGroup->style().borderBefore();
-            if (gb.style() == BHIDDEN || cb.style() == BHIDDEN)
+            if (gb.style() == BorderStyle::Hidden || cb.style() == BorderStyle::Hidden)
                 continue;
             allHidden = false;
-            if (gb.style() > BHIDDEN && gb.width() > borderWidth)
+            if (gb.style() > BorderStyle::Hidden && gb.width() > borderWidth)
                 borderWidth = gb.width();
-            if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+            if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
                 borderWidth = cb.width();
         } else {
-            if (cb.style() == BHIDDEN)
+            if (cb.style() == BorderStyle::Hidden)
                 continue;
             allHidden = false;
-            if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+            if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
                 borderWidth = cb.width();
         }
     }
@@ -733,18 +729,18 @@ LayoutUnit RenderTableSection::calcOuterBorderAfter() const
     if (!m_grid.size() || !totalCols)
         return 0;
 
-    LayoutUnit borderWidth = 0;
+    LayoutUnit borderWidth;
 
     const BorderValue& sb = style().borderAfter();
-    if (sb.style() == BHIDDEN)
+    if (sb.style() == BorderStyle::Hidden)
         return -1;
-    if (sb.style() > BHIDDEN)
+    if (sb.style() > BorderStyle::Hidden)
         borderWidth = sb.width();
 
     const BorderValue& rb = lastRow()->style().borderAfter();
-    if (rb.style() == BHIDDEN)
+    if (rb.style() == BorderStyle::Hidden)
         return -1;
-    if (rb.style() > BHIDDEN && rb.width() > borderWidth)
+    if (rb.style() > BorderStyle::Hidden && rb.width() > borderWidth)
         borderWidth = rb.width();
 
     bool allHidden = true;
@@ -757,18 +753,18 @@ LayoutUnit RenderTableSection::calcOuterBorderAfter() const
         RenderTableCol* colGroup = table()->colElement(c);
         if (colGroup) {
             const BorderValue& gb = colGroup->style().borderAfter();
-            if (gb.style() == BHIDDEN || cb.style() == BHIDDEN)
+            if (gb.style() == BorderStyle::Hidden || cb.style() == BorderStyle::Hidden)
                 continue;
             allHidden = false;
-            if (gb.style() > BHIDDEN && gb.width() > borderWidth)
+            if (gb.style() > BorderStyle::Hidden && gb.width() > borderWidth)
                 borderWidth = gb.width();
-            if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+            if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
                 borderWidth = cb.width();
         } else {
-            if (cb.style() == BHIDDEN)
+            if (cb.style() == BorderStyle::Hidden)
                 continue;
             allHidden = false;
-            if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+            if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
                 borderWidth = cb.width();
         }
     }
@@ -783,19 +779,19 @@ LayoutUnit RenderTableSection::calcOuterBorderStart() const
     if (!m_grid.size() || !totalCols)
         return 0;
 
-    LayoutUnit borderWidth = 0;
+    LayoutUnit borderWidth;
 
     const BorderValue& sb = style().borderStart();
-    if (sb.style() == BHIDDEN)
+    if (sb.style() == BorderStyle::Hidden)
         return -1;
-    if (sb.style() > BHIDDEN)
+    if (sb.style() > BorderStyle::Hidden)
         borderWidth = sb.width();
 
     if (RenderTableCol* colGroup = table()->colElement(0)) {
         const BorderValue& gb = colGroup->style().borderStart();
-        if (gb.style() == BHIDDEN)
+        if (gb.style() == BorderStyle::Hidden)
             return -1;
-        if (gb.style() > BHIDDEN && gb.width() > borderWidth)
+        if (gb.style() > BorderStyle::Hidden && gb.width() > borderWidth)
             borderWidth = gb.width();
     }
 
@@ -807,12 +803,12 @@ LayoutUnit RenderTableSection::calcOuterBorderStart() const
         // FIXME: Don't repeat for the same cell
         const BorderValue& cb = current.primaryCell()->style().borderStart(); // FIXME: Make this work with perpendicular and flipped cells.
         const BorderValue& rb = current.primaryCell()->parent()->style().borderStart();
-        if (cb.style() == BHIDDEN || rb.style() == BHIDDEN)
+        if (cb.style() == BorderStyle::Hidden || rb.style() == BorderStyle::Hidden)
             continue;
         allHidden = false;
-        if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+        if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
             borderWidth = cb.width();
-        if (rb.style() > BHIDDEN && rb.width() > borderWidth)
+        if (rb.style() > BorderStyle::Hidden && rb.width() > borderWidth)
             borderWidth = rb.width();
     }
     if (allHidden)
@@ -826,19 +822,19 @@ LayoutUnit RenderTableSection::calcOuterBorderEnd() const
     if (!m_grid.size() || !totalCols)
         return 0;
 
-    LayoutUnit borderWidth = 0;
+    LayoutUnit borderWidth;
 
     const BorderValue& sb = style().borderEnd();
-    if (sb.style() == BHIDDEN)
+    if (sb.style() == BorderStyle::Hidden)
         return -1;
-    if (sb.style() > BHIDDEN)
+    if (sb.style() > BorderStyle::Hidden)
         borderWidth = sb.width();
 
     if (RenderTableCol* colGroup = table()->colElement(totalCols - 1)) {
         const BorderValue& gb = colGroup->style().borderEnd();
-        if (gb.style() == BHIDDEN)
+        if (gb.style() == BorderStyle::Hidden)
             return -1;
-        if (gb.style() > BHIDDEN && gb.width() > borderWidth)
+        if (gb.style() > BorderStyle::Hidden && gb.width() > borderWidth)
             borderWidth = gb.width();
     }
 
@@ -850,12 +846,12 @@ LayoutUnit RenderTableSection::calcOuterBorderEnd() const
         // FIXME: Don't repeat for the same cell
         const BorderValue& cb = current.primaryCell()->style().borderEnd(); // FIXME: Make this work with perpendicular and flipped cells.
         const BorderValue& rb = current.primaryCell()->parent()->style().borderEnd();
-        if (cb.style() == BHIDDEN || rb.style() == BHIDDEN)
+        if (cb.style() == BorderStyle::Hidden || rb.style() == BorderStyle::Hidden)
             continue;
         allHidden = false;
-        if (cb.style() > BHIDDEN && cb.width() > borderWidth)
+        if (cb.style() > BorderStyle::Hidden && cb.width() > borderWidth)
             borderWidth = cb.width();
-        if (rb.style() > BHIDDEN && rb.width() > borderWidth)
+        if (rb.style() > BorderStyle::Hidden && rb.width() > borderWidth)
             borderWidth = rb.width();
     }
     if (allHidden)
@@ -871,16 +867,16 @@ void RenderTableSection::recalcOuterBorder()
     m_outerBorderEnd = calcOuterBorderEnd();
 }
 
-std::optional<int> RenderTableSection::firstLineBaseline() const
+Optional<int> RenderTableSection::firstLineBaseline() const
 {
     if (!m_grid.size())
-        return std::optional<int>();
+        return Optional<int>();
 
     int firstLineBaseline = m_grid[0].baseline;
     if (firstLineBaseline)
         return firstLineBaseline + roundToInt(m_rowPos[0]);
 
-    std::optional<int> result;
+    Optional<int> result;
     const Row& firstRow = m_grid[0].row;
     for (size_t i = 0; i < firstRow.size(); ++i) {
         const CellStruct& cs = firstRow.at(i);
@@ -888,7 +884,7 @@ std::optional<int> RenderTableSection::firstLineBaseline() const
         // Only cells with content have a baseline
         if (cell && cell->contentLogicalHeight()) {
             int candidate = roundToInt(cell->logicalTop() + cell->borderAndPaddingBefore() + cell->contentLogicalHeight());
-            result = std::max(result.value_or(candidate), candidate);
+            result = std::max(result.valueOr(candidate), candidate);
         }
     }
 
@@ -916,7 +912,7 @@ void RenderTableSection::paint(PaintInfo& paintInfo, const LayoutPoint& paintOff
     if (pushedClip)
         popContentsClip(paintInfo, phase, adjustedPaintOffset);
 
-    if ((phase == PaintPhaseOutline || phase == PaintPhaseSelfOutline) && style().visibility() == VISIBLE)
+    if ((phase == PaintPhase::Outline || phase == PaintPhase::SelfOutline) && style().visibility() == Visibility::Visible)
         paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, size()));
 }
 
@@ -941,7 +937,7 @@ void RenderTableSection::paintCell(RenderTableCell* cell, PaintInfo& paintInfo, 
     PaintPhase paintPhase = paintInfo.phase;
     RenderTableRow& row = downcast<RenderTableRow>(*cell->parent());
 
-    if (paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground) {
+    if (paintPhase == PaintPhase::BlockBackground || paintPhase == PaintPhase::ChildBlockBackground) {
         // We need to handle painting a stack of backgrounds.  This stack (from bottom to top) consists of
         // the column group, column, row group, row, and then the cell.
         RenderTableCol* column = table()->colElement(cell->col());
@@ -1075,61 +1071,61 @@ CellSpan RenderTableSection::spannedColumns(const LayoutRect& flippedRect, Shoul
     return CellSpan(startColumn, endColumn);
 }
 
-void RenderTableSection::paintRowGroupBorder(const PaintInfo& paintInfo, bool antialias, LayoutRect rect, BoxSide side, CSSPropertyID borderColor, EBorderStyle borderStyle, EBorderStyle tableBorderStyle)
+void RenderTableSection::paintRowGroupBorder(const PaintInfo& paintInfo, bool antialias, LayoutRect rect, BoxSide side, CSSPropertyID borderColor, BorderStyle borderStyle, BorderStyle tableBorderStyle)
 {
-    if (tableBorderStyle == BHIDDEN)
+    if (tableBorderStyle == BorderStyle::Hidden)
         return;
     rect.intersect(paintInfo.rect);
     if (rect.isEmpty())
         return;
-    drawLineForBoxSide(paintInfo.context(), rect, side, style().visitedDependentColor(borderColor), borderStyle, 0, 0, antialias);
+    drawLineForBoxSide(paintInfo.context(), rect, side, style().visitedDependentColorWithColorFilter(borderColor), borderStyle, 0, 0, antialias);
 }
 
 LayoutUnit RenderTableSection::offsetLeftForRowGroupBorder(RenderTableCell* cell, const LayoutRect& rowGroupRect, unsigned row)
 {
     if (style().isHorizontalWritingMode()) {
         if (style().isLeftToRightDirection())
-            return cell ? cell->x() + cell->width() : LayoutUnit::fromPixel(0);
+            return cell ? cell->x() + cell->width() : 0_lu;
         return -outerBorderLeft(&style());
     }
     bool isLastRow = row + 1 == m_grid.size();
-    return rowGroupRect.width() - m_rowPos[row + 1] + (isLastRow ? -outerBorderLeft(&style()) : LayoutUnit::fromPixel(0));
+    return rowGroupRect.width() - m_rowPos[row + 1] + (isLastRow ? -outerBorderLeft(&style()) : 0_lu);
 }
 
 LayoutUnit RenderTableSection::offsetTopForRowGroupBorder(RenderTableCell* cell, BoxSide borderSide, unsigned row)
 {
     bool isLastRow = row + 1 == m_grid.size();
     if (style().isHorizontalWritingMode())
-        return m_rowPos[row] + (!row && borderSide == BSRight ? -outerBorderTop(&style()) : isLastRow && borderSide == BSLeft ? outerBorderTop(&style()) : LayoutUnit::fromPixel(0));
+        return m_rowPos[row] + (!row && borderSide == BSRight ? -outerBorderTop(&style()) : isLastRow && borderSide == BSLeft ? outerBorderTop(&style()) : 0_lu);
     if (style().isLeftToRightDirection())
-        return (cell ? cell->y() + cell->height() : LayoutUnit::fromPixel(0)) + (borderSide == BSLeft ? outerBorderTop(&style()) : LayoutUnit::fromPixel(0));
-    return borderSide == BSRight ? -outerBorderTop(&style()) : LayoutUnit::fromPixel(0);
+        return (cell ? cell->y() + cell->height() : 0_lu) + (borderSide == BSLeft ? outerBorderTop(&style()) : 0_lu);
+    return borderSide == BSRight ? -outerBorderTop(&style()) : 0_lu;
 }
 
 LayoutUnit RenderTableSection::verticalRowGroupBorderHeight(RenderTableCell* cell, const LayoutRect& rowGroupRect, unsigned row)
 {
     bool isLastRow = row + 1 == m_grid.size();
     if (style().isHorizontalWritingMode())
-        return m_rowPos[row + 1] - m_rowPos[row] + (!row ? outerBorderTop(&style()) : isLastRow ? outerBorderBottom(&style()) : LayoutUnit::fromPixel(0));
+        return m_rowPos[row + 1] - m_rowPos[row] + (!row ? outerBorderTop(&style()) : isLastRow ? outerBorderBottom(&style()) : 0_lu);
     if (style().isLeftToRightDirection())
-        return rowGroupRect.height() - (cell ? cell->y() + cell->height() : LayoutUnit::fromPixel(0)) + outerBorderBottom(&style());
-    return cell ? rowGroupRect.height() - (cell->y() - cell->height()) : LayoutUnit::fromPixel(0);
+        return rowGroupRect.height() - (cell ? cell->y() + cell->height() : 0_lu) + outerBorderBottom(&style());
+    return cell ? rowGroupRect.height() - (cell->y() - cell->height()) : 0_lu;
 }
 
 LayoutUnit RenderTableSection::horizontalRowGroupBorderWidth(RenderTableCell* cell, const LayoutRect& rowGroupRect, unsigned row, unsigned column)
 {
     if (style().isHorizontalWritingMode()) {
         if (style().isLeftToRightDirection())
-            return rowGroupRect.width() - (cell ? cell->x() + cell->width() : LayoutUnit::fromPixel(0)) + (!column ? outerBorderLeft(&style()) : column == table()->numEffCols() ? outerBorderRight(&style()) : LayoutUnit::fromPixel(0));
-        return cell ? rowGroupRect.width() - (cell->x() - cell->width()) : LayoutUnit::fromPixel(0);
+            return rowGroupRect.width() - (cell ? cell->x() + cell->width() : 0_lu) + (!column ? outerBorderLeft(&style()) : column == table()->numEffCols() ? outerBorderRight(&style()) : 0_lu);
+        return cell ? rowGroupRect.width() - (cell->x() - cell->width()) : 0_lu;
     }
     bool isLastRow = row + 1 == m_grid.size();
-    return m_rowPos[row + 1] - m_rowPos[row] + (isLastRow ? outerBorderLeft(&style()) : !row ? outerBorderRight(&style()) : LayoutUnit::fromPixel(0));
+    return m_rowPos[row + 1] - m_rowPos[row] + (isLastRow ? outerBorderLeft(&style()) : !row ? outerBorderRight(&style()) : 0_lu);
 }
 
 void RenderTableSection::paintRowGroupBorderIfRequired(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, unsigned row, unsigned column, BoxSide borderSide, RenderTableCell* cell)
 {
-    if (table()->currentBorderValue()->precedence() > BROWGROUP)
+    if (table()->currentBorderValue()->precedence() > BorderPrecedence::RowGroup)
         return;
     if (paintInfo.context().paintingDisabled())
         return;
@@ -1137,23 +1133,23 @@ void RenderTableSection::paintRowGroupBorderIfRequired(const PaintInfo& paintInf
     const RenderStyle& style = this->style();
     bool antialias = shouldAntialiasLines(paintInfo.context());
     LayoutRect rowGroupRect = LayoutRect(paintOffset, size());
-    rowGroupRect.moveBy(-LayoutPoint(outerBorderLeft(&style), (borderSide == BSRight) ? LayoutUnit::fromPixel(0) : outerBorderTop(&style)));
+    rowGroupRect.moveBy(-LayoutPoint(outerBorderLeft(&style), (borderSide == BSRight) ? 0_lu : outerBorderTop(&style)));
 
     switch (borderSide) {
     case BSTop:
         paintRowGroupBorder(paintInfo, antialias, LayoutRect(paintOffset.x() + offsetLeftForRowGroupBorder(cell, rowGroupRect, row), rowGroupRect.y(),
-            horizontalRowGroupBorderWidth(cell, rowGroupRect, row, column), style.borderTop().width()), BSTop, CSSPropertyBorderTopColor, style.borderTopStyle(), table()->style().borderTopStyle());
+            horizontalRowGroupBorderWidth(cell, rowGroupRect, row, column), LayoutUnit(style.borderTop().width())), BSTop, CSSPropertyBorderTopColor, style.borderTopStyle(), table()->style().borderTopStyle());
         break;
     case BSBottom:
         paintRowGroupBorder(paintInfo, antialias, LayoutRect(paintOffset.x() + offsetLeftForRowGroupBorder(cell, rowGroupRect, row), rowGroupRect.y() + rowGroupRect.height(),
-            horizontalRowGroupBorderWidth(cell, rowGroupRect, row, column), style.borderBottom().width()), BSBottom, CSSPropertyBorderBottomColor, style.borderBottomStyle(), table()->style().borderBottomStyle());
+            horizontalRowGroupBorderWidth(cell, rowGroupRect, row, column), LayoutUnit(style.borderBottom().width())), BSBottom, CSSPropertyBorderBottomColor, style.borderBottomStyle(), table()->style().borderBottomStyle());
         break;
     case BSLeft:
-        paintRowGroupBorder(paintInfo, antialias, LayoutRect(rowGroupRect.x(), rowGroupRect.y() + offsetTopForRowGroupBorder(cell, borderSide, row), style.borderLeft().width(),
+        paintRowGroupBorder(paintInfo, antialias, LayoutRect(rowGroupRect.x(), rowGroupRect.y() + offsetTopForRowGroupBorder(cell, borderSide, row), LayoutUnit(style.borderLeft().width()),
             verticalRowGroupBorderHeight(cell, rowGroupRect, row)), BSLeft, CSSPropertyBorderLeftColor, style.borderLeftStyle(), table()->style().borderLeftStyle());
         break;
     case BSRight:
-        paintRowGroupBorder(paintInfo, antialias, LayoutRect(rowGroupRect.x() + rowGroupRect.width(), rowGroupRect.y() + offsetTopForRowGroupBorder(cell, borderSide, row), style.borderRight().width(),
+        paintRowGroupBorder(paintInfo, antialias, LayoutRect(rowGroupRect.x() + rowGroupRect.width(), rowGroupRect.y() + offsetTopForRowGroupBorder(cell, borderSide, row), LayoutUnit(style.borderRight().width()),
             verticalRowGroupBorderHeight(cell, rowGroupRect, row)), BSRight, CSSPropertyBorderRightColor, style.borderRightStyle(), table()->style().borderRightStyle());
         break;
     default:
@@ -1200,7 +1196,7 @@ void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& pa
 
     if (dirtiedColumns.start < dirtiedColumns.end) {
         if (!m_hasMultipleCellLevels && !m_overflowingCells.size()) {
-            if (paintInfo.phase == PaintPhaseCollapsedTableBorders) {
+            if (paintInfo.phase == PaintPhase::CollapsedTableBorders) {
                 // Collapsed borders are painted from the bottom right to the top left so that precedence
                 // due to cell position is respected. We need to paint one row beyond the topmost dirtied
                 // row to calculate its collapsed border value.
@@ -1293,7 +1289,7 @@ void RenderTableSection::paintObject(PaintInfo& paintInfo, const LayoutPoint& pa
             else
                 std::sort(cells.begin(), cells.end(), compareCellPositionsWithOverflowingCells);
 
-            if (paintInfo.phase == PaintPhaseCollapsedTableBorders) {
+            if (paintInfo.phase == PaintPhase::CollapsedTableBorders) {
                 for (unsigned i = cells.size(); i > 0; --i) {
                     LayoutPoint cellPoint = flipForWritingModeForChild(cells[i - 1], paintOffset);
                     cells[i - 1]->paintCollapsedBorders(paintInfo, cellPoint);
@@ -1545,13 +1541,13 @@ CollapsedBorderValue RenderTableSection::cachedCollapsedBorder(const RenderTable
     auto it = m_cellsCollapsedBorders.find(std::make_pair(&cell, side));
     // Only non-empty collapsed borders are in the hashmap.
     if (it == m_cellsCollapsedBorders.end())
-        return CollapsedBorderValue(BorderValue(), Color(), BCELL);
+        return CollapsedBorderValue(BorderValue(), Color(), BorderPrecedence::Cell);
     return it->value;
 }
 
 RenderPtr<RenderTableSection> RenderTableSection::createTableSectionWithStyle(Document& document, const RenderStyle& style)
 {
-    auto section = createRenderer<RenderTableSection>(document, RenderStyle::createAnonymousStyleWithDisplay(style, TABLE_ROW_GROUP));
+    auto section = createRenderer<RenderTableSection>(document, RenderStyle::createAnonymousStyleWithDisplay(style, DisplayType::TableRowGroup));
     section->initializeStyle();
     return section;
 }
@@ -1565,7 +1561,7 @@ void RenderTableSection::setLogicalPositionForCell(RenderTableCell* cell, unsign
 {
     LayoutPoint oldCellLocation = cell->location();
 
-    LayoutPoint cellLocation(0, m_rowPos[cell->rowIndex()]);
+    LayoutPoint cellLocation(0_lu, m_rowPos[cell->rowIndex()]);
     LayoutUnit horizontalBorderSpacing = table()->hBorderSpacing();
 
     // FIXME: The table's direction should determine our row's direction, not the section's (see bug 96691).

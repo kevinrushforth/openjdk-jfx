@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,17 +36,18 @@ namespace JSC {
 // object will store the overflow arguments, if there are any. This object will use the symbol
 // table's ScopedArgumentsTable and the activation, or its overflow storage, to handle all indexed
 // lookups.
-class ScopedArguments : public GenericArguments<ScopedArguments> {
+class ScopedArguments final : public GenericArguments<ScopedArguments> {
 private:
-    ScopedArguments(VM&, Structure*, unsigned totalLength);
+    ScopedArguments(VM&, Structure*, WriteBarrier<Unknown>* storage, unsigned totalLength);
     void finishCreation(VM&, JSFunction* callee, ScopedArgumentsTable*, JSLexicalEnvironment*);
+    using Base = GenericArguments<ScopedArguments>;
 
 public:
-    template<typename CellType>
-    static CompleteSubspace* subspaceFor(VM& vm)
+    template<typename CellType, SubspaceAccess>
+    static IsoSubspace* subspaceFor(VM& vm)
     {
-        RELEASE_ASSERT(!CellType::needsDestruction);
-        return &vm.jsValueGigacageCellSpace;
+        static_assert(!CellType::needsDestruction, "");
+        return &vm.scopedArgumentsSpace;
     }
 
     // Creates an arguments object but leaves it uninitialized. This is dangerous if we GC right
@@ -58,7 +59,7 @@ public:
     static ScopedArguments* create(VM&, Structure*, JSFunction* callee, ScopedArgumentsTable*, JSLexicalEnvironment*, unsigned totalLength);
 
     // Creates an arguments object by copying the arguments from the stack.
-    static ScopedArguments* createByCopying(ExecState*, ScopedArgumentsTable*, JSLexicalEnvironment*);
+    static ScopedArguments* createByCopying(JSGlobalObject*, CallFrame*, ScopedArgumentsTable*, JSLexicalEnvironment*);
 
     // Creates an arguments object by copying the arguments from a well-defined stack location.
     static ScopedArguments* createByCopyingFrom(VM&, Structure*, Register* argumentsStart, unsigned totalLength, JSFunction* callee, ScopedArgumentsTable*, JSLexicalEnvironment*);
@@ -70,11 +71,15 @@ public:
         return m_totalLength;
     }
 
-    uint32_t length(ExecState* exec) const
+    uint32_t length(JSGlobalObject* globalObject) const
     {
-        VM& vm = exec->vm();
-        if (UNLIKELY(m_overrodeThings))
-            return get(exec, vm.propertyNames->length).toUInt32(exec);
+        VM& vm = getVM(globalObject);
+        auto scope = DECLARE_THROW_SCOPE(vm);
+        if (UNLIKELY(m_overrodeThings)) {
+            auto value = get(globalObject, vm.propertyNames->length);
+            RETURN_IF_EXCEPTION(scope, 0);
+            RELEASE_AND_RETURN(scope, value.toUInt32(globalObject));
+        }
         return internalLength();
     }
 
@@ -85,7 +90,7 @@ public:
         unsigned namedLength = m_table->length();
         if (i < namedLength)
             return !!m_table->get(i);
-        return !!overflowStorage()[i - namedLength].get();
+        return !!storage()[i - namedLength].get();
     }
 
     bool isMappedArgumentInDFG(uint32_t i) const
@@ -99,7 +104,7 @@ public:
         unsigned namedLength = m_table->length();
         if (i < namedLength)
             return m_scope->variableAt(m_table->get(i)).get();
-        return overflowStorage()[i - namedLength].get();
+        return storage()[i - namedLength].get();
     }
 
     void setIndexQuickly(VM& vm, uint32_t i, JSValue value)
@@ -109,27 +114,27 @@ public:
         if (i < namedLength)
             m_scope->variableAt(m_table->get(i)).set(vm, m_scope.get(), value);
         else
-            overflowStorage()[i - namedLength].set(vm, this, value);
+            storage()[i - namedLength].set(vm, this, value);
     }
 
-    WriteBarrier<JSFunction>& callee()
+    JSFunction* callee()
     {
-        return m_callee;
+        return m_callee.get();
     }
 
     bool overrodeThings() const { return m_overrodeThings; }
-    void overrideThings(VM&);
-    void overrideThingsIfNecessary(VM&);
-    void unmapArgument(VM&, uint32_t index);
+    void overrideThings(JSGlobalObject*);
+    void overrideThingsIfNecessary(JSGlobalObject*);
+    void unmapArgument(JSGlobalObject*, uint32_t index);
 
-    void initModifiedArgumentsDescriptorIfNecessary(VM& vm)
+    void initModifiedArgumentsDescriptorIfNecessary(JSGlobalObject* globalObject)
     {
-        GenericArguments<ScopedArguments>::initModifiedArgumentsDescriptorIfNecessary(vm, m_table->length());
+        GenericArguments<ScopedArguments>::initModifiedArgumentsDescriptorIfNecessary(globalObject, m_table->length());
     }
 
-    void setModifiedArgumentDescriptor(VM& vm, unsigned index)
+    void setModifiedArgumentDescriptor(JSGlobalObject* globalObject, unsigned index)
     {
-        GenericArguments<ScopedArguments>::setModifiedArgumentDescriptor(vm, index, m_table->length());
+        GenericArguments<ScopedArguments>::setModifiedArgumentDescriptor(globalObject, index, m_table->length());
     }
 
     bool isModifiedArgumentDescriptor(unsigned index)
@@ -137,7 +142,7 @@ public:
         return GenericArguments<ScopedArguments>::isModifiedArgumentDescriptor(index, m_table->length());
     }
 
-    void copyToArguments(ExecState*, VirtualRegister firstElementDest, unsigned offset, unsigned length);
+    void copyToArguments(JSGlobalObject*, JSValue* firstElementDest, unsigned offset, unsigned length);
 
     DECLARE_INFO;
 
@@ -147,28 +152,21 @@ public:
     static ptrdiff_t offsetOfTotalLength() { return OBJECT_OFFSETOF(ScopedArguments, m_totalLength); }
     static ptrdiff_t offsetOfTable() { return OBJECT_OFFSETOF(ScopedArguments, m_table); }
     static ptrdiff_t offsetOfScope() { return OBJECT_OFFSETOF(ScopedArguments, m_scope); }
-
-    static size_t overflowStorageOffset()
-    {
-        return WTF::roundUpToMultipleOf<sizeof(WriteBarrier<Unknown>)>(sizeof(ScopedArguments));
-    }
-
-    static size_t allocationSize(Checked<size_t> overflowArgumentsLength)
-    {
-        return (overflowStorageOffset() + sizeof(WriteBarrier<Unknown>) * overflowArgumentsLength).unsafeGet();
-    }
+    static ptrdiff_t offsetOfStorage() { return OBJECT_OFFSETOF(ScopedArguments, m_storage); }
 
 private:
-    WriteBarrier<Unknown>* overflowStorage() const
+    WriteBarrier<Unknown>* storage() const
     {
-        return bitwise_cast<WriteBarrier<Unknown>*>(bitwise_cast<char*>(this) + overflowStorageOffset());
+        return m_storage.get();
     }
 
-    bool m_overrodeThings; // True if length, callee, and caller are fully materialized in the object.
+    bool m_overrodeThings { false }; // True if length, callee, and caller are fully materialized in the object.
     unsigned m_totalLength; // The length of declared plus overflow arguments.
     WriteBarrier<JSFunction> m_callee;
     WriteBarrier<ScopedArgumentsTable> m_table;
     WriteBarrier<JSLexicalEnvironment> m_scope;
+
+    AuxiliaryBarrier<WriteBarrier<Unknown>*> m_storage;
 };
 
 } // namespace JSC

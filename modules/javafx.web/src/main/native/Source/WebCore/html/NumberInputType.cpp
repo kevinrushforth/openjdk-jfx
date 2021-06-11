@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google Inc. All rights reserved.
- * Copyright (C) 2011, 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -32,6 +32,7 @@
 #include "config.h"
 #include "NumberInputType.h"
 
+#include "Decimal.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "HTMLParserIdioms.h"
@@ -40,6 +41,7 @@
 #include "LocalizedStrings.h"
 #include "PlatformLocale.h"
 #include "RenderTextControl.h"
+#include "StepRange.h"
 #include <limits>
 #include <wtf/ASCIICType.h>
 #include <wtf/MathExtras.h>
@@ -86,7 +88,7 @@ static RealNumberRenderSize calculateRenderSize(const Decimal& value)
     return { sizeOfSign + sizeOfZero , numberOfZeroAfterDecimalPoint + sizeOfDigits };
 }
 
-const AtomicString& NumberInputType::formControlType() const
+const AtomString& NumberInputType::formControlType() const
 {
     return InputTypeNames::number();
 }
@@ -151,7 +153,7 @@ StepRange NumberInputType::createStepRange(AnyStepHandling anyStepHandling) cons
 
     RangeLimitations rangeLimitations = RangeLimitations::Invalid;
     auto extractBound = [&] (const QualifiedName& attributeName, const Decimal& defaultValue) -> Decimal {
-        const AtomicString& attributeValue = element.attributeWithoutSynchronization(attributeName);
+        const AtomString& attributeValue = element.attributeWithoutSynchronization(attributeName);
         Decimal valueFromAttribute = parseToNumberOrNaN(attributeValue);
         if (valueFromAttribute.isFinite()) {
             rangeLimitations = RangeLimitations::Valid;
@@ -213,11 +215,12 @@ bool NumberInputType::isSteppable() const
     return true;
 }
 
-void NumberInputType::handleKeydownEvent(KeyboardEvent& event)
+auto NumberInputType::handleKeydownEvent(KeyboardEvent& event) -> ShouldCallBaseEventHandler
 {
     handleKeydownEventForSpinButton(event);
     if (!event.defaultHandled())
-        TextFieldInputType::handleKeydownEvent(event);
+        return TextFieldInputType::handleKeydownEvent(event);
+    return ShouldCallBaseEventHandler::Yes;
 }
 
 Decimal NumberInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
@@ -294,23 +297,22 @@ bool NumberInputType::isNumberField() const
     return true;
 }
 
-void NumberInputType::minOrMaxAttributeChanged()
+void NumberInputType::attributeChanged(const QualifiedName& name)
 {
-    if (auto* element = this->element()) {
-        element->invalidateStyleForSubtree();
-        if (auto* renderer = element->renderer())
-        renderer->setNeedsLayoutAndPrefWidthsRecalc();
+    ASSERT(element());
+    if (name == maxAttr || name == minAttr) {
+        if (auto* element = this->element()) {
+            element->invalidateStyleForSubtree();
+            if (auto* renderer = element->renderer())
+                renderer->setNeedsLayoutAndPrefWidthsRecalc();
+        }
+    } else if (name == stepAttr) {
+        if (auto* element = this->element()) {
+            if (auto* renderer = element->renderer())
+                renderer->setNeedsLayoutAndPrefWidthsRecalc();
+        }
     }
-}
-
-void NumberInputType::stepAttributeChanged()
-{
-    InputType::stepAttributeChanged();
-
-    if (auto* element = this->element()) {
-        if (auto* renderer = element->renderer())
-            renderer->setNeedsLayoutAndPrefWidthsRecalc();
-    }
+    TextFieldInputType::attributeChanged(name);
 }
 
 } // namespace WebCore

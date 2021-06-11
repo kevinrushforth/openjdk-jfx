@@ -41,14 +41,14 @@ public:
     void drawBorder(const Color&, float borderWidth, const FloatRect&, const TransformationMatrix&) final;
     void drawNumber(int number, const Color&, const FloatPoint&, const TransformationMatrix&) final;
     void drawTexture(const BitmapTexture&, const FloatRect& targetRect, const TransformationMatrix&, float opacity, unsigned exposedEdges) final;
-    void drawSolidColor(const FloatRect&, const TransformationMatrix&, const Color&) final;
-    void beginClip(const TransformationMatrix&, const FloatRect&) final;
+    void drawSolidColor(const FloatRect&, const TransformationMatrix&, const Color&, bool) final;
+    void beginClip(const TransformationMatrix&, const FloatRoundedRect&) final;
     void bindSurface(BitmapTexture* surface) final { m_currentSurface = surface;}
     void endClip() final { graphicsContext()->restore(); }
     IntRect clipBounds() final { return currentContext()->clipBounds(); }
     IntSize maxTextureSize() const final;
     Ref<BitmapTexture> createTexture() final { return BitmapTextureJava::create(); }
-    Ref<BitmapTexture> createTexture(GC3Dint) final { return createTexture(); }
+    Ref<BitmapTexture> createTexture(GCGLint) final { return createTexture(); }
     void clearColor(const Color&) final;
 
     inline GraphicsContext* currentContext()

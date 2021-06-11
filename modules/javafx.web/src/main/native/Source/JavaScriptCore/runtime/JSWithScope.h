@@ -29,9 +29,15 @@
 
 namespace JSC {
 
-class JSWithScope : public JSScope {
+class JSWithScope final : public JSScope {
 public:
-    typedef JSScope Base;
+    using Base = JSScope;
+
+    template<typename CellType, SubspaceAccess mode>
+    static IsoSubspace* subspaceFor(VM& vm)
+    {
+        return vm.withScopeSpace<mode>();
+    }
 
     JS_EXPORT_PRIVATE static JSWithScope* create(VM&, JSGlobalObject*, JSScope* next, JSObject*);
 

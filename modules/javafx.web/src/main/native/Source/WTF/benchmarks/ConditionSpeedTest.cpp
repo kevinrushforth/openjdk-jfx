@@ -35,7 +35,6 @@
 #include <type_traits>
 #include <unistd.h>
 #include <wtf/Condition.h>
-#include <wtf/CurrentTime.h>
 #include <wtf/DataLog.h>
 #include <wtf/Deque.h>
 #include <wtf/Lock.h>
@@ -119,7 +118,7 @@ void runTest(
                     notify(fullCondition, mustNotify);
 
                     {
-                        std::lock_guard<LockType> locker(receivedLock);
+                        auto locker = holdLock(receivedLock);
                         received.append(result);
                     }
                 }
@@ -153,7 +152,7 @@ void runTest(
         thread->waitForCompletion();
 
     {
-        std::lock_guard<LockType> locker(lock);
+        auto locker = holdLock(lock);
         shouldContinue = false;
     }
     notifyAll(emptyCondition);
@@ -175,7 +174,7 @@ void runBenchmark(
     const NotifyFunctor& notify,
     const NotifyAllFunctor& notifyAll)
 {
-    double before = monotonicallyIncreasingTimeMS();
+    MonotonicTime before = MonotonicTime::now();
 
     runTest<LockType, ConditionType>(
         numProducers,
@@ -185,16 +184,16 @@ void runBenchmark(
         notify,
         notifyAll);
 
-    double after = monotonicallyIncreasingTimeMS();
+    MonotonicTime after = MonotonicTime::now();
 
-    printf("%s: %.3lf ms.\n", name, after - before);
+    printf("%s: %.3lf ms.\n", name, (after - before).milliseconds());
 }
 
 } // anonymous namespace
 
 int main(int argc, char** argv)
 {
-    WTF::initializeThreading();
+    WTF::initialize();
 
     if (argc != 6
         || sscanf(argv[2], "%u", &numProducers) != 1

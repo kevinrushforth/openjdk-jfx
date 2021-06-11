@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,9 +26,8 @@
 #include "config.h"
 #include "HeapVerifier.h"
 
-#include "CodeBlock.h"
-#include "HeapIterationScope.h"
-#include "JSCInlines.h"
+#include "ButterflyInlines.h"
+#include "CodeBlockInlines.h"
 #include "JSObject.h"
 #include "MarkedSpaceInlines.h"
 #include "VMInspector.h"
@@ -43,7 +42,7 @@ HeapVerifier::HeapVerifier(Heap* heap, unsigned numberOfGCCyclesToRecord)
     , m_numberOfCycles(numberOfGCCyclesToRecord)
 {
     RELEASE_ASSERT(m_numberOfCycles > 0);
-    m_cycles = std::make_unique<GCCycle[]>(m_numberOfCycles);
+    m_cycles = makeUniqueArray<GCCycle>(m_numberOfCycles);
 }
 
 const char* HeapVerifier::phaseName(HeapVerifier::Phase phase)
@@ -144,16 +143,16 @@ void HeapVerifier::printVerificationHeader()
     CollectionScope scope = currentCycle().scope;
     MonotonicTime gcCycleTimestamp = currentCycle().timestamp;
     dataLog("Verifying heap in [p", getCurrentProcessID(), ", ", Thread::current(), "] vm ",
-        RawPointer(m_heap->vm()), " on ", scope, " GC @ ", gcCycleTimestamp, "\n");
+        RawPointer(&m_heap->vm()), " on ", scope, " GC @ ", gcCycleTimestamp, "\n");
 }
 
 bool HeapVerifier::verifyCellList(Phase phase, CellList& list)
 {
-    VM& vm = *m_heap->vm();
+    VM& vm = m_heap->vm();
     auto& liveCells = list.cells();
 
     bool listNamePrinted = false;
-    auto printHeaderIfNeeded = [&] () {
+    auto printHeaderIfNeeded = scopedLambda<void()>([&] () {
         if (listNamePrinted)
             return;
 
@@ -161,7 +160,7 @@ bool HeapVerifier::verifyCellList(Phase phase, CellList& list)
         dataLog(" @ phase ", phaseName(phase), ": FAILED in cell list '", list.name(), "' (size ", liveCells.size(), ")\n");
         listNamePrinted = true;
         m_didPrintLogs = true;
-    };
+    });
 
     bool success = true;
     for (size_t i = 0; i < liveCells.size(); i++) {
@@ -181,23 +180,23 @@ bool HeapVerifier::verifyCellList(Phase phase, CellList& list)
 
 bool HeapVerifier::validateCell(HeapCell* cell, VM* expectedVM)
 {
-    auto printNothing = [] () { };
+    auto printNothing = scopedLambda<void()>([] () { });
 
     if (cell->isZapped()) {
         dataLog("    cell ", RawPointer(cell), " is ZAPPED\n");
         return false;
     }
 
-    if (cell->cellKind() != HeapCell::JSCell)
+    if (!isJSCellKind(cell->cellKind()))
         return true; // Nothing more to validate.
 
     JSCell* jsCell = static_cast<JSCell*>(cell);
     return validateJSCell(expectedVM, jsCell, nullptr, nullptr, printNothing);
 }
 
-bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* profile, CellList* list, std::function<void()> printHeaderIfNeeded, const char* prefix)
+bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* profile, CellList* list, const ScopedLambda<void()>& printHeaderIfNeeded, const char* prefix)
 {
-    auto printHeaderAndCell = [cell, profile, printHeaderIfNeeded, prefix] () {
+    auto printHeaderAndCell = [cell, profile, &printHeaderIfNeeded, prefix] () {
         printHeaderIfNeeded();
         dataLog(prefix, "cell ", RawPointer(cell));
         if (profile)
@@ -222,7 +221,7 @@ bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* pro
     if (expectedVM) {
         VM& vm = *expectedVM;
 
-        VM* cellVM = cell->vm();
+        VM* cellVM = &cell->vm();
         if (cellVM != expectedVM) {
             printHeaderAndCell();
             dataLog(" is from a different VM: expected:", RawPointer(expectedVM), " actual:", RawPointer(cellVM), "\n");
@@ -255,7 +254,7 @@ bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* pro
             return false;
         }
 
-        VM* structureVM = structure->vm();
+        VM* structureVM = &structure->vm();
         if (structureVM != expectedVM) {
             printHeaderAndCell();
             dataLog(" has structure ", RawPointer(structure), " from a different VM: expected:", RawPointer(expectedVM), " actual:", RawPointer(structureVM), "\n");
@@ -305,7 +304,7 @@ bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* pro
             return false;
         }
 
-        VM* structureStructureVM = structureStructure->vm();
+        VM* structureStructureVM = &structureStructure->vm();
         if (structureStructureVM != expectedVM) {
             printHeaderAndCell();
             dataLog(" has structure ", RawPointer(structure), " whose structure ", RawPointer(structureStructure), " is from a different VM: expected:", RawPointer(expectedVM), " actual:", RawPointer(structureStructureVM), "\n");
@@ -330,8 +329,7 @@ bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* pro
         CodeBlock* codeBlock = jsDynamicCast<CodeBlock*>(vm, cell);
         if (UNLIKELY(codeBlock)) {
             bool success = true;
-            for (unsigned i = 0; i < codeBlock->totalNumberOfValueProfiles(); ++i) {
-                ValueProfile& valueProfile = codeBlock->getFromAllValueProfiles(i);
+            codeBlock->forEachValueProfile([&](ValueProfile& valueProfile, bool) {
                 for (unsigned i = 0; i < ValueProfile::totalNumberOfBuckets; ++i) {
                     JSValue value = JSValue::decode(valueProfile.m_buckets[i]);
                     if (!value)
@@ -346,7 +344,7 @@ bool HeapVerifier::validateJSCell(VM* expectedVM, JSCell* cell, CellProfile* pro
                         continue;
                     }
                 }
-            }
+            });
             if (!success)
                 return false;
         }
@@ -366,7 +364,7 @@ void HeapVerifier::verify(HeapVerifier::Phase phase)
 void HeapVerifier::reportCell(CellProfile& profile, int cycleIndex, HeapVerifier::GCCycle& cycle, CellList& list, const char* prefix)
 {
     HeapCell* cell = profile.cell();
-    VM* vm = m_heap->vm();
+    VM& vm = m_heap->vm();
 
     if (prefix)
         dataLog(prefix);
@@ -388,7 +386,7 @@ void HeapVerifier::reportCell(CellProfile& profile, int cycleIndex, HeapVerifier
 
     if (profile.isLive() && profile.isJSCell()) {
         JSCell* jsCell = profile.jsCell();
-        Structure* structure = jsCell->structure();
+        Structure* structure = jsCell->structure(vm);
         dataLog(" structure:", RawPointer(structure));
         if (jsCell->isObject()) {
             JSObject* obj = static_cast<JSObject*>(cell);
@@ -400,7 +398,7 @@ void HeapVerifier::reportCell(CellProfile& profile, int cycleIndex, HeapVerifier
     }
 
     dataLog(" in ", cycle.scope, " GC[", cycleIndex, "] in '", list.name(), "' list in VM ",
-        RawPointer(vm), " recorded at time ", profile.timestamp(), "\n");
+        RawPointer(&vm), " recorded at time ", profile.timestamp(), "\n");
     if (profile.stackTrace())
         dataLog(*profile.stackTrace());
 }
@@ -409,7 +407,7 @@ void HeapVerifier::checkIfRecorded(HeapCell* cell)
 {
     bool found = false;
     const char* const prefix = "  ";
-    static const bool verbose = true;
+    static constexpr bool verbose = true;
 
     for (int cycleIndex = 0; cycleIndex > -m_numberOfCycles; cycleIndex--) {
         GCCycle& cycle = cycleForIndex(cycleIndex);

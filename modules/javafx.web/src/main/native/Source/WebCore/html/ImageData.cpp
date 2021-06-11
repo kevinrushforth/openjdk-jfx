@@ -32,6 +32,7 @@
 
 #include <JavaScriptCore/JSCInlines.h>
 #include <JavaScriptCore/TypedArrayInlines.h>
+#include <wtf/text/TextStream.h>
 
 namespace WebCore {
 
@@ -44,12 +45,12 @@ ExceptionOr<Ref<ImageData>> ImageData::create(unsigned sw, unsigned sh)
     dataSize *= sw;
     dataSize *= sh;
     if (dataSize.hasOverflowed())
-        return Exception { RangeError, ASCIILiteral("Cannot allocate a buffer of this size") };
+        return Exception { RangeError, "Cannot allocate a buffer of this size"_s };
 
     IntSize size(sw, sh);
     auto data = adoptRef(*new ImageData(size));
     data->data()->zeroFill();
-    return WTFMove(data);
+    return data;
 }
 
 RefPtr<ImageData> ImageData::create(const IntSize& size)
@@ -77,37 +78,49 @@ RefPtr<ImageData> ImageData::create(const IntSize& size, Ref<Uint8ClampedArray>&
     return adoptRef(*new ImageData(size, WTFMove(byteArray)));
 }
 
-ExceptionOr<RefPtr<ImageData>> ImageData::create(Ref<Uint8ClampedArray>&& byteArray, unsigned sw, std::optional<unsigned> sh)
+ExceptionOr<Ref<ImageData>> ImageData::create(Ref<Uint8ClampedArray>&& byteArray, unsigned sw, Optional<unsigned> sh)
 {
     unsigned length = byteArray->length();
     if (!length || length % 4)
-        return Exception { InvalidStateError, ASCIILiteral("Length is not a non-zero multiple of 4") };
+        return Exception { InvalidStateError, "Length is not a non-zero multiple of 4"_s };
 
     ASSERT(length > 0);
     length /= 4;
     if (!sw || length % sw)
-        return Exception { IndexSizeError, ASCIILiteral("Length is not a multiple of sw") };
+        return Exception { IndexSizeError, "Length is not a multiple of sw"_s };
 
     unsigned height = length / sw;
     if (sh && sh.value() != height)
-        return Exception { IndexSizeError, ASCIILiteral("sh value is not equal to height") };
+        return Exception { IndexSizeError, "sh value is not equal to height"_s };
 
-    return create(IntSize(sw, height), WTFMove(byteArray));
+    auto result = create(IntSize(sw, height), WTFMove(byteArray));
+    if (!result)
+        return Exception { RangeError };
+    return result.releaseNonNull();
 }
 
 ImageData::ImageData(const IntSize& size)
     : m_size(size)
     , m_data(Uint8ClampedArray::createUninitialized((size.area() * 4).unsafeGet()))
 {
-    ASSERT(m_data);
 }
 
 ImageData::ImageData(const IntSize& size, Ref<Uint8ClampedArray>&& byteArray)
     : m_size(size)
     , m_data(WTFMove(byteArray))
 {
-    ASSERT(m_data);
-    ASSERT_WITH_SECURITY_IMPLICATION(!m_data || (size.area() * 4).unsafeGet() <= m_data->length());
+    RELEASE_ASSERT_WITH_SECURITY_IMPLICATION((size.area() * 4).unsafeGet() <= m_data->length());
+}
+
+Ref<ImageData> ImageData::deepClone() const
+{
+    return adoptRef(*new ImageData(m_size, Uint8ClampedArray::create(m_data->data(), m_data->length())));
+}
+
+TextStream& operator<<(TextStream& ts, const ImageData& imageData)
+{
+    // Print out the address of the pixel data array
+    return ts << imageData.data();
 }
 
 }

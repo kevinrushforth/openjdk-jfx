@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 Apple Inc.  All rights reserved.
+ * Copyright (C) 2017-2019 Apple Inc.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,10 +26,13 @@
 #pragma once
 
 #include <wtf/Assertions.h>
+#include <wtf/HashTraits.h>
+#include <wtf/UniqueArray.h>
 
 namespace WTF {
 
 class StackShot {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     StackShot() { }
 
@@ -37,7 +40,7 @@ public:
         : m_size(size)
     {
         if (size) {
-            m_array = std::make_unique<void*[]>(size);
+            m_array = makeUniqueArray<void*>(size);
             int intSize = size;
             WTFGetBacktrace(m_array.get(), &intSize);
             RELEASE_ASSERT(static_cast<size_t>(intSize) <= size);
@@ -55,7 +58,7 @@ public:
 
     StackShot& operator=(const StackShot& other)
     {
-        std::unique_ptr<void*[]> newArray = std::make_unique<void*[]>(other.m_size);
+        auto newArray = makeUniqueArray<void*>(other.m_size);
         for (size_t i = other.m_size; i--;)
             newArray[i] = other.m_array[i];
         m_size = other.m_size;
@@ -107,22 +110,19 @@ public:
 private:
     static void** deletedValueArray() { return bitwise_cast<void**>(static_cast<uintptr_t>(1)); }
 
-    std::unique_ptr<void*[]> m_array;
+    UniqueArray<void*> m_array;
     size_t m_size { 0 };
 };
 
 struct StackShotHash {
     static unsigned hash(const StackShot& shot) { return shot.hash(); }
     static bool equal(const StackShot& a, const StackShot& b) { return a == b; }
-    static const bool safeToCompareToEmptyOrDeleted = false;
+    static constexpr bool safeToCompareToEmptyOrDeleted = false;
 };
 
 template<typename T> struct DefaultHash;
-template<> struct DefaultHash<StackShot> {
-    typedef StackShotHash Hash;
-};
+template<> struct DefaultHash<StackShot> : StackShotHash { };
 
-template<typename T> struct HashTraits;
 template<> struct HashTraits<StackShot> : SimpleClassHashTraits<StackShot> { };
 
 } // namespace WTF

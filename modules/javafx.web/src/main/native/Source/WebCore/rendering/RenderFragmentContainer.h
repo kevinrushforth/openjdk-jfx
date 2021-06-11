@@ -93,7 +93,6 @@ public:
     // flow thread portion we contain. For sets, we have to figure out the top of the nearest column or
     // page.
     virtual LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const;
-    virtual LayoutUnit pageLogicalHeightForOffset(LayoutUnit offset) const;
 
     // Whether or not this fragment is a set.
     virtual bool isRenderFragmentContainerSet() const { return false; }
@@ -178,6 +177,10 @@ public:
 private:
     RenderFragmentContainer& m_fragment;
 };
+
+#ifndef NDEBUG
+TextStream& operator<<(TextStream&, const RenderFragmentContainer&);
+#endif
 
 } // namespace WebCore
 

@@ -113,6 +113,34 @@ uint32_t Action::serializedLength(const SerializedActionByte* actions, const uin
     RELEASE_ASSERT_NOT_REACHED();
 }
 
+Trigger Trigger::isolatedCopy() const
+{
+    return {
+        urlFilter.isolatedCopy(),
+        urlFilterIsCaseSensitive,
+        topURLConditionIsCaseSensitive,
+        flags,
+        conditions.isolatedCopy(),
+        conditionType
+    };
+}
+
+Action Action::isolatedCopy() const
+{
+    if (hasStringArgument(m_type)) {
+        return {
+            m_type,
+            m_stringArgument.isolatedCopy(),
+            m_actionID
+        };
+    } else {
+        return {
+            m_type,
+            m_actionID
+        };
+    }
+}
+
 } // namespace ContentExtensions
 
 } // namespace WebCore

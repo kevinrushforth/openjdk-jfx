@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2018-2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,36 +27,20 @@
 #include "LocalAllocator.h"
 
 #include "AllocatingScope.h"
+#include "FreeListInlines.h"
+#include "GCDeferralContext.h"
 #include "LocalAllocatorInlines.h"
 #include "Options.h"
+#include "SuperSampler.h"
 
 namespace JSC {
 
-LocalAllocator::LocalAllocator(ThreadLocalCache* tlc, BlockDirectory* directory)
-    : m_tlc(tlc)
-    , m_directory(directory)
-    , m_cellSize(directory->m_cellSize)
-    , m_freeList(m_cellSize)
+LocalAllocator::LocalAllocator(BlockDirectory* directory)
+    : m_directory(directory)
+    , m_freeList(directory->m_cellSize)
 {
     auto locker = holdLock(directory->m_localAllocatorsLock);
     directory->m_localAllocators.append(this);
-}
-
-LocalAllocator::LocalAllocator(LocalAllocator&& other)
-    : m_tlc(other.m_tlc)
-    , m_directory(other.m_directory)
-    , m_cellSize(other.m_cellSize)
-    , m_freeList(WTFMove(other.m_freeList))
-    , m_currentBlock(other.m_currentBlock)
-    , m_lastActiveBlock(other.m_lastActiveBlock)
-    , m_allocationCursor(other.m_allocationCursor)
-{
-    other.reset();
-    if (other.isOnList()) {
-        auto locker = holdLock(m_directory->m_localAllocatorsLock);
-        other.remove();
-        m_directory->m_localAllocators.append(this);
-    }
 }
 
 void LocalAllocator::reset()
@@ -74,25 +58,6 @@ LocalAllocator::~LocalAllocator()
         remove();
     }
 
-    // Assert that this allocator isn't holding onto any memory. This is a valid assertion for the
-    // following two use cases:
-    //
-    // - Immortal TLC. Those destruct after the heap is done destructing, so they should not have
-    //   any state left in them.
-    //
-    // - TLC owned by an object. Such a TLC gets destroyed after a GC flip during which we proved
-    //   that it is not reachable. Therefore, the TLC should still be in a fully reset state at the
-    //   time of destruction because for it to get into any other state, someone must have allocated
-    //   in it (which is impossible because it's supposedly unreachable).
-    //
-    // My biggest worry with these assertions is that there will be some TLC that gets set as the
-    // current one but then never reset, and in the meantime the global object that owns it gets
-    // destroyed.
-    //
-    // Note that if we did hold onto some memory and we wanted to return it then this could be weird.
-    // We would potentially have to stopAllocating(). That would mean having to return a block to the
-    // BlockDirectory. It's not clear that the BlockDirectory is prepared to handle that during
-    // sweeping another block, for example.
     bool ok = true;
     if (!m_freeList.allocationWillFail()) {
         dataLog("FATAL: ", RawPointer(this), "->~LocalAllocator has non-empty free-list.\n");
@@ -144,12 +109,11 @@ void LocalAllocator::stopAllocatingForGood()
     reset();
 }
 
-void* LocalAllocator::allocateSlowCase(GCDeferralContext* deferralContext, AllocationFailureMode failureMode)
+void* LocalAllocator::allocateSlowCase(Heap& heap, GCDeferralContext* deferralContext, AllocationFailureMode failureMode)
 {
     SuperSamplerScope superSamplerScope(false);
-    Heap& heap = *m_directory->m_heap;
-    ASSERT(heap.vm()->currentThreadIsHoldingAPILock());
-    doTestCollectionsIfNeeded(deferralContext);
+    ASSERT(heap.vm().currentThreadIsHoldingAPILock());
+    doTestCollectionsIfNeeded(heap, deferralContext);
 
     ASSERT(!m_directory->markedSpace().isIterating());
     heap.didAllocate(m_freeList.originalSize());
@@ -163,21 +127,27 @@ void* LocalAllocator::allocateSlowCase(GCDeferralContext* deferralContext, Alloc
     // Goofy corner case: the GC called a callback and now this directory has a currentBlock. This only
     // happens when running WebKit tests, which inject a callback into the GC's finalization.
     if (UNLIKELY(m_currentBlock))
-        return allocate(deferralContext, failureMode);
+        return allocate(heap, deferralContext, failureMode);
 
     void* result = tryAllocateWithoutCollecting();
 
-    if (LIKELY(result != 0))
+    if (LIKELY(result != nullptr))
         return result;
 
-    MarkedBlock::Handle* block = m_directory->tryAllocateBlock();
+    Subspace* subspace = m_directory->m_subspace;
+    if (subspace->isIsoSubspace()) {
+        if (void* result = static_cast<IsoSubspace*>(subspace)->tryAllocateFromLowerTier())
+            return result;
+    }
+
+    MarkedBlock::Handle* block = m_directory->tryAllocateBlock(heap);
     if (!block) {
         if (failureMode == AllocationFailureMode::Assert)
             RELEASE_ASSERT_NOT_REACHED();
         else
             return nullptr;
     }
-    m_directory->addBlock(block, m_tlc->securityOriginToken());
+    m_directory->addBlock(block);
     result = allocateIn(block);
     ASSERT(result);
     return result;
@@ -222,8 +192,7 @@ void* LocalAllocator::tryAllocateWithoutCollecting()
             return result;
     }
 
-    if (Options::stealEmptyBlocksFromOtherAllocators()
-        && (Options::tradeDestructorBlocks() || !m_directory->needsDestruction())) {
+    if (Options::stealEmptyBlocksFromOtherAllocators()) {
         if (MarkedBlock::Handle* block = m_directory->m_subspace->findEmptyBlockToSteal()) {
             RELEASE_ASSERT(block->alignedMemoryAllocator() == m_directory->m_subspace->alignedMemoryAllocator());
 
@@ -233,7 +202,7 @@ void* LocalAllocator::tryAllocateWithoutCollecting()
             // because there is a remote chance that a block may have both canAllocateButNotEmpty
             // and empty set at the same time.
             block->removeFromDirectory();
-            m_directory->addBlock(block, m_tlc->securityOriginToken());
+            m_directory->addBlock(block);
             return allocateIn(block);
         }
     }
@@ -278,18 +247,18 @@ void* LocalAllocator::tryAllocateIn(MarkedBlock::Handle* block)
     return result;
 }
 
-void LocalAllocator::doTestCollectionsIfNeeded(GCDeferralContext* deferralContext)
+void LocalAllocator::doTestCollectionsIfNeeded(Heap& heap, GCDeferralContext* deferralContext)
 {
     if (!Options::slowPathAllocsBetweenGCs())
         return;
 
     static unsigned allocationCount = 0;
     if (!allocationCount) {
-        if (!m_directory->m_heap->isDeferred()) {
+        if (!heap.isDeferred()) {
             if (deferralContext)
                 deferralContext->m_shouldGC = true;
             else
-                m_directory->m_heap->collectNow(Sync, CollectionScope::Full);
+                heap.collectNow(Sync, CollectionScope::Full);
         }
     }
     if (++allocationCount >= Options::slowPathAllocsBetweenGCs())

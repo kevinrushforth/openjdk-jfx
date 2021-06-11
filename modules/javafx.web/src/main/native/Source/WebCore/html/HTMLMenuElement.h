@@ -27,6 +27,7 @@
 namespace WebCore {
 
 class HTMLMenuElement final : public HTMLElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLMenuElement);
 public:
     static Ref<HTMLMenuElement> create(const QualifiedName&, Document&);
 
@@ -37,7 +38,7 @@ private:
 
     InsertedIntoAncestorResult insertedIntoAncestor(InsertionType, ContainerNode&) final;
     void removedFromAncestor(RemovalType, ContainerNode&) final;
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
 
     bool m_isTouchBarMenu;
 };

@@ -28,37 +28,67 @@
 
 #if USE(LIBWEBRTC)
 
-#include "VideoToolBoxDecoderFactory.h"
-#include "VideoToolBoxEncoderFactory.h"
+#include "RuntimeEnabledFeatures.h"
+
+ALLOW_UNUSED_PARAMETERS_BEGIN
+#include <webrtc/sdk/WebKit/WebKitUtilities.h>
+ALLOW_UNUSED_PARAMETERS_END
+#include <webrtc/sdk/WebKit/WebKitVP9Decoder.h>
+#include <wtf/MainThread.h>
+#include <wtf/darwin/WeakLinking.h>
+
+WTF_WEAK_LINK_FORCE_IMPORT(webrtc::setApplicationStatus);
 
 namespace WebCore {
 
-std::unique_ptr<cricket::WebRtcVideoDecoderFactory> LibWebRTCProviderCocoa::createDecoderFactory()
+UniqueRef<LibWebRTCProvider> LibWebRTCProvider::create()
 {
-    ASSERT(!m_decoderFactory);
-    auto decoderFactory = std::make_unique<VideoToolboxVideoDecoderFactory>();
-    m_decoderFactory = decoderFactory.get();
-
-    return WTFMove(decoderFactory);
+    return makeUniqueRef<LibWebRTCProviderCocoa>();
 }
 
-std::unique_ptr<cricket::WebRtcVideoEncoderFactory> LibWebRTCProviderCocoa::createEncoderFactory()
+LibWebRTCProviderCocoa::~LibWebRTCProviderCocoa()
 {
-    ASSERT(!m_encoderFactory);
-    auto encoderFactory = std::make_unique<VideoToolboxVideoEncoderFactory>();
-    m_encoderFactory = encoderFactory.get();
+}
 
-    return WTFMove(encoderFactory);
+void LibWebRTCProviderCocoa::setH264HardwareEncoderAllowed(bool allowed)
+{
+    webrtc::setH264HardwareEncoderAllowed(allowed);
+}
+
+std::unique_ptr<webrtc::VideoDecoderFactory> LibWebRTCProviderCocoa::createDecoderFactory()
+{
+    ASSERT(isMainThread());
+
+    return webrtc::createWebKitDecoderFactory(isSupportingH265() ? webrtc::WebKitH265::On : webrtc::WebKitH265::Off, isSupportingVP9() ? webrtc::WebKitVP9::On : webrtc::WebKitVP9::Off);
+}
+
+std::unique_ptr<webrtc::VideoEncoderFactory> LibWebRTCProviderCocoa::createEncoderFactory()
+{
+    ASSERT(isMainThread());
+
+    webrtc::setH264LowLatencyEncoderEnabled(RuntimeEnabledFeatures::sharedFeatures().webRTCH264LowLatencyEncoderEnabled());
+    return webrtc::createWebKitEncoderFactory(isSupportingH265() ? webrtc::WebKitH265::On : webrtc::WebKitH265::Off, isSupportingVP9() ? webrtc::WebKitVP9::On : webrtc::WebKitVP9::Off);
 }
 
 void LibWebRTCProviderCocoa::setActive(bool value)
 {
-    if (m_decoderFactory)
-        m_decoderFactory->setActive(value);
-    if (m_encoderFactory)
-        m_encoderFactory->setActive(value);
+    webrtc::setApplicationStatus(value);
 }
 
+bool LibWebRTCProvider::webRTCAvailable()
+{
+#if PLATFORM(IOS)
+    return true;
+#else
+    return !!webrtc::setApplicationStatus;
+#endif
+}
+
+void LibWebRTCProvider::registerWebKitVP9Decoder()
+{
+    if (webRTCAvailable())
+        webrtc::registerWebKitVP9Decoder();
+}
 } // namespace WebCore
 
-#endif
+#endif // USE(LIBWEBRTC)

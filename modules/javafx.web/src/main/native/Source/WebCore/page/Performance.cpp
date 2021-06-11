@@ -41,22 +41,26 @@
 #include "PerformanceEntry.h"
 #include "PerformanceNavigation.h"
 #include "PerformanceObserver.h"
+#include "PerformancePaintTiming.h"
 #include "PerformanceResourceTiming.h"
 #include "PerformanceTiming.h"
 #include "PerformanceUserTiming.h"
 #include "ResourceResponse.h"
 #include "ScriptExecutionContext.h"
-#include <wtf/CurrentTime.h>
+#include <wtf/IsoMallocInlines.h>
 
 namespace WebCore {
 
-Performance::Performance(ScriptExecutionContext& context, MonotonicTime timeOrigin)
-    : ContextDestructionObserver(&context)
+WTF_MAKE_ISO_ALLOCATED_IMPL(Performance);
+
+Performance::Performance(ScriptExecutionContext* context, MonotonicTime timeOrigin)
+    : ContextDestructionObserver(context)
     , m_resourceTimingBufferFullTimer(*this, &Performance::resourceTimingBufferFullTimerFired)
     , m_timeOrigin(timeOrigin)
     , m_performanceTimelineTaskQueue(context)
 {
     ASSERT(m_timeOrigin);
+    ASSERT(context || m_performanceTimelineTaskQueue.isClosed());
 }
 
 Performance::~Performance() = default;
@@ -64,14 +68,19 @@ Performance::~Performance() = default;
 void Performance::contextDestroyed()
 {
     m_performanceTimelineTaskQueue.close();
-
+    m_resourceTimingBufferFullTimer.stop();
     ContextDestructionObserver::contextDestroyed();
 }
 
 DOMHighResTimeStamp Performance::now() const
 {
+    return nowInReducedResolutionSeconds().milliseconds();
+}
+
+ReducedResolutionSeconds Performance::nowInReducedResolutionSeconds() const
+{
     Seconds now = MonotonicTime::now() - m_timeOrigin;
-    return reduceTimeResolution(now).milliseconds();
+    return reduceTimeResolution(now);
 }
 
 Seconds Performance::reduceTimeResolution(Seconds seconds)
@@ -94,7 +103,7 @@ PerformanceNavigation* Performance::navigation()
 
     ASSERT(isMainThread());
     if (!m_navigation)
-        m_navigation = PerformanceNavigation::create(downcast<Document>(*scriptExecutionContext()).frame());
+        m_navigation = PerformanceNavigation::create(downcast<Document>(*scriptExecutionContext()).domWindow());
     return m_navigation.get();
 }
 
@@ -105,7 +114,7 @@ PerformanceTiming* Performance::timing()
 
     ASSERT(isMainThread());
     if (!m_timing)
-        m_timing = PerformanceTiming::create(downcast<Document>(*scriptExecutionContext()).frame());
+        m_timing = PerformanceTiming::create(downcast<Document>(*scriptExecutionContext()).domWindow());
     return m_timing.get();
 }
 
@@ -120,6 +129,9 @@ Vector<RefPtr<PerformanceEntry>> Performance::getEntries() const
         entries.appendVector(m_userTiming->getMeasures());
     }
 
+    if (m_firstContentfulPaint)
+        entries.append(m_firstContentfulPaint);
+
     std::sort(entries.begin(), entries.end(), PerformanceEntry::startTimeCompareLessThan);
     return entries;
 }
@@ -128,13 +140,16 @@ Vector<RefPtr<PerformanceEntry>> Performance::getEntriesByType(const String& ent
 {
     Vector<RefPtr<PerformanceEntry>> entries;
 
-    if (equalLettersIgnoringASCIICase(entryType, "resource"))
+    if (entryType == "resource")
         entries.appendVector(m_resourceTimingBuffer);
 
+    if (m_firstContentfulPaint && entryType == "paint")
+        entries.append(m_firstContentfulPaint);
+
     if (m_userTiming) {
-        if (equalLettersIgnoringASCIICase(entryType, "mark"))
+        if (entryType == "mark")
             entries.appendVector(m_userTiming->getMarks());
-        else if (equalLettersIgnoringASCIICase(entryType, "measure"))
+        else if (entryType == "measure")
             entries.appendVector(m_userTiming->getMeasures());
     }
 
@@ -146,22 +161,41 @@ Vector<RefPtr<PerformanceEntry>> Performance::getEntriesByName(const String& nam
 {
     Vector<RefPtr<PerformanceEntry>> entries;
 
-    if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "resource")) {
+    if (entryType.isNull() || entryType == "resource") {
         for (auto& resource : m_resourceTimingBuffer) {
             if (resource->name() == name)
                 entries.append(resource);
         }
     }
 
+    if (m_firstContentfulPaint && (entryType.isNull() || entryType == "paint") && name == "first-contentful-paint")
+        entries.append(m_firstContentfulPaint);
+
     if (m_userTiming) {
-        if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "mark"))
+        if (entryType.isNull() || entryType == "mark")
             entries.appendVector(m_userTiming->getMarks(name));
-        if (entryType.isNull() || equalLettersIgnoringASCIICase(entryType, "measure"))
+        if (entryType.isNull() || entryType == "measure")
             entries.appendVector(m_userTiming->getMeasures(name));
     }
 
     std::sort(entries.begin(), entries.end(), PerformanceEntry::startTimeCompareLessThan);
     return entries;
+}
+
+bool Performance::appendBufferedEntriesByType(const String& entryType, Vector<RefPtr<PerformanceEntry>>& entries) const
+{
+    auto oldEntriesSize = entries.size();
+    if (entryType == "resource")
+        entries.appendVector(m_resourceTimingBuffer);
+
+    if (m_userTiming) {
+        if (entryType.isNull() || entryType == "mark")
+            entries.appendVector(m_userTiming->getMarks());
+        if (entryType.isNull() || entryType == "measure")
+            entries.appendVector(m_userTiming->getMeasures());
+    }
+
+    return entries.size() > oldEntriesSize;
 }
 
 void Performance::clearResourceTimings()
@@ -176,8 +210,17 @@ void Performance::setResourceTimingBufferSize(unsigned size)
     m_resourceTimingBufferFullFlag = false;
 }
 
+void Performance::reportFirstContentfulPaint()
+{
+    ASSERT(!m_firstContentfulPaint);
+    m_firstContentfulPaint = PerformancePaintTiming::createFirstContentfulPaint(now());
+    queueEntry(*m_firstContentfulPaint);
+}
+
 void Performance::addResourceTiming(ResourceTiming&& resourceTiming)
 {
+    ASSERT(scriptExecutionContext());
+
     auto entry = PerformanceResourceTiming::create(m_timeOrigin, WTFMove(resourceTiming));
 
     if (m_waitingForBackupBufferToBeProcessed) {
@@ -186,7 +229,7 @@ void Performance::addResourceTiming(ResourceTiming&& resourceTiming)
     }
 
     if (m_resourceTimingBufferFullFlag) {
-        // We fired resourcetimingbufferfull evnet but the author script didn't clear the buffer.
+        // We fired resourcetimingbufferfull event but the author script didn't clear the buffer.
         // Notify performance observers but don't add it to the buffer.
         queueEntry(entry.get());
         return;
@@ -211,12 +254,18 @@ bool Performance::isResourceTimingBufferFull() const
 
 void Performance::resourceTimingBufferFullTimerFired()
 {
+    ASSERT(scriptExecutionContext());
+
     while (!m_backupResourceTimingBuffer.isEmpty()) {
+        auto beforeCount = m_backupResourceTimingBuffer.size();
+
         auto backupBuffer = WTFMove(m_backupResourceTimingBuffer);
         ASSERT(m_backupResourceTimingBuffer.isEmpty());
 
-        m_resourceTimingBufferFullFlag = true;
-        dispatchEvent(Event::create(eventNames().resourcetimingbufferfullEvent, true, false));
+        if (isResourceTimingBufferFull()) {
+            m_resourceTimingBufferFullFlag = true;
+            dispatchEvent(Event::create(eventNames().resourcetimingbufferfullEvent, Event::CanBubble::No, Event::IsCancelable::No));
+        }
 
         if (m_resourceTimingBufferFullFlag) {
             for (auto& entry : backupBuffer)
@@ -239,6 +288,13 @@ void Performance::resourceTimingBufferFullTimerFired()
             } else
                 m_backupResourceTimingBuffer.append(entry.copyRef());
         }
+
+        auto afterCount = m_backupResourceTimingBuffer.size();
+
+        if (beforeCount <= afterCount) {
+            m_backupResourceTimingBuffer.clear();
+            break;
+        }
     }
     m_waitingForBackupBufferToBeProcessed = false;
 }
@@ -246,7 +302,7 @@ void Performance::resourceTimingBufferFullTimerFired()
 ExceptionOr<void> Performance::mark(const String& markName)
 {
     if (!m_userTiming)
-        m_userTiming = std::make_unique<UserTiming>(*this);
+        m_userTiming = makeUnique<UserTiming>(*this);
 
     auto result = m_userTiming->mark(markName);
     if (result.hasException())
@@ -260,14 +316,14 @@ ExceptionOr<void> Performance::mark(const String& markName)
 void Performance::clearMarks(const String& markName)
 {
     if (!m_userTiming)
-        m_userTiming = std::make_unique<UserTiming>(*this);
+        m_userTiming = makeUnique<UserTiming>(*this);
     m_userTiming->clearMarks(markName);
 }
 
 ExceptionOr<void> Performance::measure(const String& measureName, const String& startMark, const String& endMark)
 {
     if (!m_userTiming)
-        m_userTiming = std::make_unique<UserTiming>(*this);
+        m_userTiming = makeUnique<UserTiming>(*this);
 
     auto result = m_userTiming->measure(measureName, startMark, endMark);
     if (result.hasException())
@@ -281,7 +337,7 @@ ExceptionOr<void> Performance::measure(const String& measureName, const String& 
 void Performance::clearMeasures(const String& measureName)
 {
     if (!m_userTiming)
-        m_userTiming = std::make_unique<UserTiming>(*this);
+        m_userTiming = makeUnique<UserTiming>(*this);
     m_userTiming->clearMeasures(measureName);
 }
 

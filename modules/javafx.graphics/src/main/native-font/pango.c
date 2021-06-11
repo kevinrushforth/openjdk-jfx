@@ -32,10 +32,27 @@
 #include <pango/pangoft2.h>
 #include <dlfcn.h>
 
+#ifdef STATIC_BUILD
+JNIEXPORT jint JNICALL
+JNI_OnLoad_javafx_font_pango(JavaVM * vm, void * reserved) {
+#ifdef JNI_VERSION_1_8
+    JNIEnv *env;
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_8) != JNI_OK) {
+        return JNI_VERSION_1_4;
+    }
+    return JNI_VERSION_1_8;
+#else
+    return JNI_VERSION_1_4;
+#endif
+}
+#endif
+
+
 #define OS_NATIVE(func) Java_com_sun_javafx_font_freetype_OSPango_##func
 
 extern jboolean checkAndClearException(JNIEnv *env);
 
+#ifndef STATIC_BUILD // can't have this twice in a static build
 jboolean checkAndClearException(JNIEnv *env)
 {
     jthrowable t = (*env)->ExceptionOccurred(env);
@@ -45,6 +62,7 @@ jboolean checkAndClearException(JNIEnv *env)
     (*env)->ExceptionClear(env);
     return JNI_TRUE;
 }
+#endif
 
 /**************************************************************************/
 /*                                                                        */
@@ -378,6 +396,13 @@ JNIEXPORT jlong JNICALL OS_NATIVE(g_1utf8_1pointer_1to_1offset)
 {
     if (!str) return 0;
     return (jlong)g_utf8_pointer_to_offset((const gchar *)str, (const gchar *)pos);
+}
+
+JNIEXPORT jlong JNICALL OS_NATIVE(g_1utf8_1strlen)
+    (JNIEnv *env, jclass that, jlong str, jlong pos)
+{
+    if (!str) return 0;
+    return (jlong)g_utf8_strlen((const gchar *)str, (const gchar *)pos);
 }
 
 JNIEXPORT jlong JNICALL OS_NATIVE(g_1utf16_1to_1utf8)

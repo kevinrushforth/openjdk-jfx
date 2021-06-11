@@ -26,20 +26,23 @@
 #include "HTMLElement.h"
 #include "HTMLNames.h"
 #include "SharedStringHash.h"
-#include "URLUtils.h"
+#include "URLDecomposition.h"
 #include <wtf/OptionSet.h>
 
 namespace WebCore {
 
+class AdClickAttribution;
 class DOMTokenList;
 
 // Link relation bitmask values.
-enum class Relation {
+enum class Relation : uint8_t {
     NoReferrer = 1 << 0,
     NoOpener = 1 << 1,
+    Opener = 1 << 2,
 };
 
-class HTMLAnchorElement : public HTMLElement, public URLUtils<HTMLAnchorElement> {
+class HTMLAnchorElement : public HTMLElement, public URLDecomposition {
+    WTF_MAKE_ISO_ALLOCATED(HTMLAnchorElement);
 public:
     static Ref<HTMLAnchorElement> create(Document&);
     static Ref<HTMLAnchorElement> create(const QualifiedName&, Document&);
@@ -47,9 +50,9 @@ public:
     virtual ~HTMLAnchorElement();
 
     WEBCORE_EXPORT URL href() const;
-    void setHref(const AtomicString&);
+    void setHref(const AtomString&);
 
-    const AtomicString& name() const;
+    const AtomString& name() const;
 
     WEBCORE_EXPORT String origin() const;
 
@@ -63,29 +66,41 @@ public:
     bool hasRel(Relation) const;
 
     SharedStringHash visitedLinkHash() const;
-    void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
 
     WEBCORE_EXPORT DOMTokenList& relList();
+
+#if USE(SYSTEM_PREVIEW)
+    WEBCORE_EXPORT bool isSystemPreviewLink();
+#endif
+
+    void setReferrerPolicyForBindings(const AtomString&);
+    String referrerPolicyForBindings() const;
+    ReferrerPolicy referrerPolicy() const;
 
 protected:
     HTMLAnchorElement(const QualifiedName&, Document&);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    void parseAttribute(const QualifiedName&, const AtomString&) override;
 
 private:
     bool supportsFocus() const override;
     bool isMouseFocusable() const override;
-    bool isKeyboardFocusable(KeyboardEvent&) const override;
+    bool isKeyboardFocusable(KeyboardEvent*) const override;
     void defaultEventHandler(Event&) final;
     void setActive(bool active = true, bool pause = false) final;
-    void accessKeyAction(bool sendMouseEvents) final;
+    bool accessKeyAction(bool sendMouseEvents) final;
     bool isURLAttribute(const Attribute&) const final;
     bool canStartSelection() const final;
     String target() const override;
-    int tabIndex() const final;
+    int defaultTabIndex() const final;
     bool draggable() const final;
+    bool isInteractiveContent() const final;
+
+    String effectiveTarget() const;
 
     void sendPings(const URL& destinationURL);
+
+    Optional<AdClickAttribution> parseAdClickAttribution() const;
 
     void handleClick(Event&);
 
@@ -101,19 +116,25 @@ private:
     void setRootEditableElementForSelectionOnMouseDown(Element*);
     void clearRootEditableElementForSelectionOnMouseDown();
 
-    bool m_hasRootEditableElementForSelectionOnMouseDown;
-    bool m_wasShiftKeyDownOnMouseDown;
+    URL fullURL() const final { return href(); }
+    void setFullURL(const URL& fullURL) final { setHref(fullURL.string()); }
+
+    bool m_hasRootEditableElementForSelectionOnMouseDown { false };
+    bool m_wasShiftKeyDownOnMouseDown { false };
     OptionSet<Relation> m_linkRelations;
-    mutable SharedStringHash m_cachedVisitedLinkHash;
+
+    // This is computed only once and must not be affected by subsequent URL changes.
+    mutable Markable<SharedStringHash, SharedStringHashMarkableTraits> m_storedVisitedLinkHash;
 
     std::unique_ptr<DOMTokenList> m_relList;
 };
 
 inline SharedStringHash HTMLAnchorElement::visitedLinkHash() const
 {
-    if (!m_cachedVisitedLinkHash)
-        m_cachedVisitedLinkHash = computeVisitedLinkHash(document().baseURL(), attributeWithoutSynchronization(HTMLNames::hrefAttr));
-    return m_cachedVisitedLinkHash;
+    ASSERT(isLink());
+    if (!m_storedVisitedLinkHash)
+        m_storedVisitedLinkHash = computeVisitedLinkHash(document().baseURL(), attributeWithoutSynchronization(HTMLNames::hrefAttr));
+    return *m_storedVisitedLinkHash;
 }
 
 // Functions shared with the other anchor elements (i.e., SVG).

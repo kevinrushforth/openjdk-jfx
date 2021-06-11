@@ -32,6 +32,7 @@
 namespace WebCore {
 
 class PseudoElement final : public Element {
+    WTF_MAKE_ISO_ALLOCATED(PseudoElement);
 public:
     static Ref<PseudoElement> create(Element& host, PseudoId);
     virtual ~PseudoElement();
@@ -40,6 +41,7 @@ public:
     void clearHostElement();
 
     bool rendererIsNeeded(const RenderStyle&) override;
+    bool isTargetedByKeyframeEffectRequiringPseudoElement();
 
     bool canStartSelection() const override { return false; }
     bool canContainRangeEndPoint() const override { return false; }

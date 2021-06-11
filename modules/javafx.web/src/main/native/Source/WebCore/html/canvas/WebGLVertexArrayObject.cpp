@@ -46,16 +46,14 @@ WebGLVertexArrayObject::~WebGLVertexArrayObject()
 WebGLVertexArrayObject::WebGLVertexArrayObject(WebGLRenderingContextBase& context, Type type)
     : WebGLVertexArrayObjectBase(context, type)
 {
-    switch (m_type) {
-    case Type::Default:
-        break;
-    case Type::User:
-        setObject(this->context()->graphicsContext3D()->createVertexArray());
-        break;
-    }
+#if USE(OPENGL_ES)
+    if (m_type != Type::User)
+        return;
+#endif
+    setObject(this->context()->graphicsContextGL()->createVertexArray());
 }
 
-void WebGLVertexArrayObject::deleteObjectImpl(GraphicsContext3D* context3d, Platform3DObject object)
+void WebGLVertexArrayObject::deleteObjectImpl(GraphicsContextGLOpenGL* context3d, PlatformGLObject object)
 {
     switch (m_type) {
     case Type::Default:

@@ -27,13 +27,14 @@
 namespace WebCore {
 
 class HTMLAppletElement final : public HTMLPlugInImageElement {
+    WTF_MAKE_ISO_ALLOCATED(HTMLAppletElement);
 public:
     static Ref<HTMLAppletElement> create(const QualifiedName&, Document&);
 
 private:
     HTMLAppletElement(const QualifiedName&, Document&);
 
-    void parseAttribute(const QualifiedName&, const AtomicString&) final;
+    void parseAttribute(const QualifiedName&, const AtomString&) final;
     bool isURLAttribute(const Attribute&) const final;
 
     bool rendererIsNeeded(const RenderStyle&) final;
@@ -43,6 +44,8 @@ private:
     void updateWidget(CreatePlugins) final;
 
     bool canEmbedJava() const;
+
+    bool isInteractiveContent() const final { return true; }
 };
 
 } // namespace WebCore

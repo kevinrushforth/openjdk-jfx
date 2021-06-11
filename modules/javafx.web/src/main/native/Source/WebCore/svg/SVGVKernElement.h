@@ -27,10 +27,11 @@
 namespace WebCore {
 
 class SVGVKernElement final : public SVGElement {
+    WTF_MAKE_ISO_ALLOCATED(SVGVKernElement);
 public:
     static Ref<SVGVKernElement> create(const QualifiedName&, Document&);
 
-    bool buildVerticalKerningPair(SVGKerningPair& kerningPair) const;
+    Optional<SVGKerningPair> buildVerticalKerningPair() const;
 
 private:
     SVGVKernElement(const QualifiedName&, Document&);

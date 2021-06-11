@@ -70,7 +70,9 @@ typedef enum {
     XPATH_INVALID_CHAR_ERROR,
     XPATH_INVALID_CTXT,
     XPATH_STACK_ERROR,
-    XPATH_FORBID_VARIABLE_ERROR
+    XPATH_FORBID_VARIABLE_ERROR,
+    XPATH_OP_LIMIT_EXCEEDED,
+    XPATH_RECURSION_LIMIT_EXCEEDED
 } xmlXPathError;
 
 /*
@@ -82,7 +84,7 @@ struct _xmlNodeSet {
     int nodeNr;         /* number of nodes in the set */
     int nodeMax;        /* size of the array as allocated */
     xmlNodePtr *nodeTab;    /* array of nodes in no particular order */
-    /* @@ with_ns to check wether namespace nodes should be looked at @@ */
+    /* @@ with_ns to check whether namespace nodes should be looked at @@ */
 };
 
 /*
@@ -352,6 +354,13 @@ struct _xmlXPathContext {
 
     /* Cache for reusal of XPath objects */
     void *cache;
+
+    /* Resource limits */
+    unsigned long opLimit;
+    unsigned long opCount;
+    int depth;
+    int maxDepth;
+    int maxParserDepth;
 };
 
 /*
@@ -421,7 +430,7 @@ XMLPUBVAR double xmlXPathNINF;
  *         @index is out of range (0 to length-1)
  */
 #define xmlXPathNodeSetItem(ns, index)              \
-        ((((ns) != NULL) &&                 \
+        ((((ns) != NULL) &&             \
           ((index) >= 0) && ((index) < (ns)->nodeNr)) ? \
          (ns)->nodeTab[(index)]             \
          : NULL)
@@ -531,7 +540,7 @@ XMLPUBFUN xmlXPathCompExprPtr XMLCALL
             xmlXPathCompile     (const xmlChar *str);
 XMLPUBFUN xmlXPathCompExprPtr XMLCALL
             xmlXPathCtxtCompile     (xmlXPathContextPtr ctxt,
-                             const xmlChar *str);
+                         const xmlChar *str);
 XMLPUBFUN xmlXPathObjectPtr XMLCALL
             xmlXPathCompiledEval    (xmlXPathCompExprPtr comp,
                          xmlXPathContextPtr ctx);

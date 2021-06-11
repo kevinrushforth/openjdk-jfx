@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,8 +26,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef WTF_MetaAllocator_h
-#define WTF_MetaAllocator_h
+#pragma once
 
 #include <wtf/Assertions.h>
 #include <wtf/HashMap.h>
@@ -45,15 +44,15 @@ namespace WTF {
 class MetaAllocatorTracker {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    void notify(MetaAllocatorHandle*);
-    void release(MetaAllocatorHandle*);
+    void notify(MetaAllocatorHandle&);
+    void release(MetaAllocatorHandle&);
 
     MetaAllocatorHandle* find(void* address)
     {
         MetaAllocatorHandle* handle = m_allocations.findGreatestLessThanOrEqual(address);
-        if (handle && address < handle->end())
+        if (handle && handle->start().untaggedPtr() <= address && address < handle->end().untaggedPtr())
             return handle;
-        return 0;
+        return nullptr;
     }
 
     RedBlackTree<MetaAllocatorHandle, void*> m_allocations;
@@ -63,11 +62,18 @@ class MetaAllocator {
     WTF_MAKE_NONCOPYABLE(MetaAllocator);
 
 public:
-    WTF_EXPORT_PRIVATE MetaAllocator(size_t allocationGranule, size_t pageSize = WTF::pageSize());
+    using FreeSpacePtr = MetaAllocatorPtr<FreeSpacePtrTag>;
+
+    WTF_EXPORT_PRIVATE MetaAllocator(Lock&, size_t allocationGranule, size_t pageSize = WTF::pageSize());
 
     WTF_EXPORT_PRIVATE virtual ~MetaAllocator();
 
-    WTF_EXPORT_PRIVATE RefPtr<MetaAllocatorHandle> allocate(size_t sizeInBytes, void* ownerUID);
+    ALWAYS_INLINE RefPtr<MetaAllocatorHandle> allocate(size_t sizeInBytes)
+    {
+        auto locker = holdLock(m_lock);
+        return allocate(locker, sizeInBytes);
+    }
+    WTF_EXPORT_PRIVATE RefPtr<MetaAllocatorHandle> allocate(const LockHolder&, size_t sizeInBytes);
 
     void trackAllocations(MetaAllocatorTracker* tracker)
     {
@@ -81,11 +87,17 @@ public:
 
     // Atomic method for getting allocator statistics.
     struct Statistics {
+        WTF_MAKE_STRUCT_FAST_ALLOCATED;
         size_t bytesAllocated;
         size_t bytesReserved;
         size_t bytesCommitted;
     };
-    WTF_EXPORT_PRIVATE Statistics currentStatistics();
+    Statistics currentStatistics()
+    {
+        auto locker = holdLock(m_lock);
+        return currentStatistics(locker);
+    }
+    WTF_EXPORT_PRIVATE Statistics currentStatistics(const LockHolder&);
 
     // Add more free space to the allocator. Call this directly from
     // the constructor if you wish to operate the allocator within a
@@ -96,7 +108,6 @@ public:
     // builds.
     WTF_EXPORT_PRIVATE size_t debugFreeSpaceSize();
 
-    Lock& getLock() { return m_lock; }
     WTF_EXPORT_PRIVATE bool isInAllocatedMemory(const AbstractLocker&, void* address);
 
 #if ENABLE(META_ALLOCATOR_PROFILE)
@@ -109,55 +120,60 @@ protected:
 
     // Allocate new virtual space, but don't commit. This may return more
     // pages than we asked, in which case numPages is changed.
-    virtual void* allocateNewSpace(size_t& numPages) = 0;
+    virtual FreeSpacePtr allocateNewSpace(size_t& numPages) = 0;
 
     // Commit a page.
-    virtual void notifyNeedPage(void* page) = 0;
+    virtual void notifyNeedPage(void* page, size_t) = 0;
 
     // Uncommit a page.
-    virtual void notifyPageIsFree(void* page) = 0;
+    virtual void notifyPageIsFree(void* page, size_t) = 0;
 
     // NOTE: none of the above methods are called during allocator
     // destruction, in part because a MetaAllocator cannot die so long
     // as there are Handles that refer to it.
 
+    // Release a MetaAllocatorHandle.
+    WTF_EXPORT_PRIVATE virtual void release(const LockHolder&, MetaAllocatorHandle&);
 private:
 
     friend class MetaAllocatorHandle;
 
     class FreeSpaceNode : public RedBlackTree<FreeSpaceNode, size_t>::Node {
     public:
+        FreeSpaceNode() = default;
+
         FreeSpaceNode(void* start, size_t sizeInBytes)
             : m_start(start)
-            , m_sizeInBytes(sizeInBytes)
+            , m_end(reinterpret_cast<uint8_t*>(start) + sizeInBytes)
+        { }
+
+        size_t sizeInBytes()
         {
+            return m_end.untaggedPtr<size_t>() - m_start.untaggedPtr<size_t>();
         }
 
         size_t key()
         {
-            return m_sizeInBytes;
+            return sizeInBytes();
         }
 
-        void* m_start;
-        size_t m_sizeInBytes;
+        FreeSpacePtr m_start;
+        FreeSpacePtr m_end;
     };
     typedef RedBlackTree<FreeSpaceNode, size_t> Tree;
-
-    // Release a MetaAllocatorHandle.
-    void release(MetaAllocatorHandle*);
 
     // Remove free space from the allocator. This is effectively
     // the allocate() function, except that it does not mark the
     // returned space as being in-use.
-    void* findAndRemoveFreeSpace(size_t sizeInBytes);
+    FreeSpacePtr findAndRemoveFreeSpace(size_t sizeInBytes);
 
     // This is called when memory from an allocation is freed.
-    void addFreeSpaceFromReleasedHandle(void* start, size_t sizeInBytes);
+    void addFreeSpaceFromReleasedHandle(FreeSpacePtr start, size_t sizeInBytes);
 
     // This is the low-level implementation of adding free space; it
     // is called from both addFreeSpaceFromReleasedHandle and from
     // addFreshFreeSpace.
-    void addFreeSpace(void* start, size_t sizeInBytes);
+    void addFreeSpace(FreeSpacePtr start, size_t sizeInBytes);
 
     // Management of used space.
 
@@ -172,22 +188,22 @@ private:
     WTF_EXPORT_PRIVATE void freeFreeSpaceNode(FreeSpaceNode*);
 
     size_t m_allocationGranule;
-    unsigned m_logAllocationGranule;
     size_t m_pageSize;
+    unsigned m_logAllocationGranule;
     unsigned m_logPageSize;
 
     Tree m_freeSpaceSizeMap;
-    HashMap<void*, FreeSpaceNode*> m_freeSpaceStartAddressMap;
-    HashMap<void*, FreeSpaceNode*> m_freeSpaceEndAddressMap;
+    HashMap<FreeSpacePtr, FreeSpaceNode*> m_freeSpaceStartAddressMap;
+    HashMap<FreeSpacePtr, FreeSpaceNode*> m_freeSpaceEndAddressMap;
     HashMap<uintptr_t, size_t> m_pageOccupancyMap;
 
     size_t m_bytesAllocated;
     size_t m_bytesReserved;
     size_t m_bytesCommitted;
 
-    Lock m_lock;
+    Lock& m_lock;
 
-    MetaAllocatorTracker* m_tracker;
+    MetaAllocatorTracker* m_tracker { nullptr };
 
 #ifndef NDEBUG
     size_t m_mallocBalance;
@@ -200,6 +216,3 @@ private:
 };
 
 } // namespace WTF
-
-#endif // WTF_MetaAllocator_h
-

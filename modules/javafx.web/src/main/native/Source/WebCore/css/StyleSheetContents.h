@@ -20,15 +20,15 @@
 
 #pragma once
 
-#include "CSSParserMode.h"
+#include "CSSParserContext.h"
 #include "CachePolicy.h"
-#include "URL.h"
 #include <wtf/Function.h>
 #include <wtf/HashMap.h>
 #include <wtf/RefCounted.h>
+#include <wtf/URL.h>
 #include <wtf/Vector.h>
 #include <wtf/WeakPtr.h>
-#include <wtf/text/AtomicStringHash.h>
+#include <wtf/text/AtomStringHash.h>
 
 namespace WebCore {
 
@@ -43,7 +43,7 @@ class StyleRuleBase;
 class StyleRuleImport;
 class StyleRuleNamespace;
 
-class StyleSheetContents final : public RefCounted<StyleSheetContents> {
+class StyleSheetContents final : public RefCounted<StyleSheetContents>, public CanMakeWeakPtr<StyleSheetContents> {
 public:
     static Ref<StyleSheetContents> create(const CSSParserContext& context = CSSParserContext(HTMLStandardMode))
     {
@@ -62,10 +62,10 @@ public:
 
     const CSSParserContext& parserContext() const { return m_parserContext; }
 
-    const AtomicString& defaultNamespace() { return m_defaultNamespace; }
-    const AtomicString& namespaceURIFromPrefix(const AtomicString& prefix);
+    const AtomString& defaultNamespace() { return m_defaultNamespace; }
+    const AtomString& namespaceURIFromPrefix(const AtomString& prefix);
 
-    void parseAuthorStyleSheet(const CachedCSSStyleSheet*, const SecurityOrigin*);
+    bool parseAuthorStyleSheet(const CachedCSSStyleSheet*, const SecurityOrigin*);
     WEBCORE_EXPORT bool parseString(const String&);
 
     bool isCacheable() const;
@@ -94,7 +94,7 @@ public:
     void setHasSyntacticallyValidCSSHeader(bool b) { m_hasSyntacticallyValidCSSHeader = b; }
     bool hasSyntacticallyValidCSSHeader() const { return m_hasSyntacticallyValidCSSHeader; }
 
-    void parserAddNamespace(const AtomicString& prefix, const AtomicString& uri);
+    void parserAddNamespace(const AtomString& prefix, const AtomString& uri);
     void parserAppendRule(Ref<StyleRuleBase>&&);
     void parserSetEncodingFromCharsetRule(const String& encoding);
     void parserSetUsesStyleBasedEditability() { m_usesStyleBasedEditability = true; }
@@ -144,7 +144,10 @@ public:
 
     void shrinkToFit();
 
-    WeakPtr<StyleSheetContents> createWeakPtr() { return m_weakPtrFactory.createWeakPtr(*this); }
+    void setAsOpaque() { m_parserContext.isContentOpaque = true; }
+    bool isContentOpaque() const { return m_parserContext.isContentOpaque; }
+
+    void setLoadErrorOccured() { m_didLoadErrorOccur = true; }
 
 private:
     WEBCORE_EXPORT StyleSheetContents(StyleRuleImport* ownerRule, const String& originalURL, const CSSParserContext&);
@@ -160,9 +163,9 @@ private:
     Vector<RefPtr<StyleRuleImport>> m_importRules;
     Vector<RefPtr<StyleRuleNamespace>> m_namespaceRules;
     Vector<RefPtr<StyleRuleBase>> m_childRules;
-    typedef HashMap<AtomicString, AtomicString> PrefixNamespaceURIMap;
+    typedef HashMap<AtomString, AtomString> PrefixNamespaceURIMap;
     PrefixNamespaceURIMap m_namespaces;
-    AtomicString m_defaultNamespace;
+    AtomString m_defaultNamespace;
 
     bool m_isUserStyleSheet;
     bool m_loadCompleted { false };
@@ -175,8 +178,6 @@ private:
     CSSParserContext m_parserContext;
 
     Vector<CSSStyleSheet*> m_clients;
-
-    WeakPtrFactory<StyleSheetContents> m_weakPtrFactory;
 };
 
 } // namespace WebCore

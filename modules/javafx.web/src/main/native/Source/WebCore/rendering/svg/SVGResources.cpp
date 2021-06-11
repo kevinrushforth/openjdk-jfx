@@ -20,6 +20,7 @@
 #include "config.h"
 #include "SVGResources.h"
 
+#include "ClipPathOperation.h"
 #include "FilterOperation.h"
 #include "RenderSVGResourceClipper.h"
 #include "RenderSVGResourceFilter.h"
@@ -42,9 +43,9 @@ SVGResources::SVGResources()
 {
 }
 
-static HashSet<AtomicString>& clipperFilterMaskerTags()
+static HashSet<AtomString>& clipperFilterMaskerTags()
 {
-    static NeverDestroyed<HashSet<AtomicString>> s_tagList;
+    static NeverDestroyed<HashSet<AtomString>> s_tagList;
     if (s_tagList.get().isEmpty()) {
         // "container elements": http://www.w3.org/TR/SVG11/intro.html#TermContainerElement
         // "graphics elements" : http://www.w3.org/TR/SVG11/intro.html#TermGraphicsElement
@@ -91,9 +92,9 @@ static HashSet<AtomicString>& clipperFilterMaskerTags()
     return s_tagList;
 }
 
-static HashSet<AtomicString>& markerTags()
+static HashSet<AtomString>& markerTags()
 {
-    static NeverDestroyed<HashSet<AtomicString>> s_tagList;
+    static NeverDestroyed<HashSet<AtomString>> s_tagList;
     if (s_tagList.get().isEmpty()) {
         s_tagList.get().add(SVGNames::lineTag->localName());
         s_tagList.get().add(SVGNames::pathTag->localName());
@@ -104,9 +105,9 @@ static HashSet<AtomicString>& markerTags()
     return s_tagList;
 }
 
-static HashSet<AtomicString>& fillAndStrokeTags()
+static HashSet<AtomString>& fillAndStrokeTags()
 {
-    static NeverDestroyed<HashSet<AtomicString>> s_tagList;
+    static NeverDestroyed<HashSet<AtomString>> s_tagList;
     if (s_tagList.get().isEmpty()) {
         s_tagList.get().add(SVGNames::altGlyphTag->localName());
         s_tagList.get().add(SVGNames::circleTag->localName());
@@ -125,9 +126,9 @@ static HashSet<AtomicString>& fillAndStrokeTags()
     return s_tagList;
 }
 
-static HashSet<AtomicString>& chainableResourceTags()
+static HashSet<AtomString>& chainableResourceTags()
 {
-    static NeverDestroyed<HashSet<AtomicString>> s_tagList;
+    static NeverDestroyed<HashSet<AtomString>> s_tagList;
     if (s_tagList.get().isEmpty()) {
         s_tagList.get().add(SVGNames::linearGradientTag->localName());
         s_tagList.get().add(SVGNames::filterTag->localName());
@@ -168,9 +169,9 @@ static inline bool isChainableResource(const SVGElement& element, const SVGEleme
     return false;
 }
 
-static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document& document, const SVGPaintType& paintType, const String& paintUri, AtomicString& id, bool& hasPendingResource)
+static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document& document, const SVGPaintType& paintType, const String& paintUri, AtomString& id, bool& hasPendingResource)
 {
-    if (paintType != SVG_PAINTTYPE_URI && paintType != SVG_PAINTTYPE_URI_RGBCOLOR && paintType != SVG_PAINTTYPE_URI_CURRENTCOLOR)
+    if (paintType != SVGPaintType::URI && paintType != SVGPaintType::URIRGBColor && paintType != SVGPaintType::URICurrentColor)
         return nullptr;
 
     id = SVGURIReference::fragmentIdentifierFromIRIString(paintUri, document);
@@ -187,9 +188,9 @@ static inline RenderSVGResourceContainer* paintingResourceFromSVGPaint(Document&
     return container;
 }
 
-static inline void registerPendingResource(SVGDocumentExtensions& extensions, const AtomicString& id, SVGElement& element)
+static inline void registerPendingResource(SVGDocumentExtensions& extensions, const AtomString& id, SVGElement& element)
 {
-    extensions.addPendingResource(id, &element);
+    extensions.addPendingResource(id, element);
 }
 
 bool SVGResources::buildCachedResources(const RenderElement& renderer, const RenderStyle& style)
@@ -206,7 +207,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
 
     SVGDocumentExtensions& extensions = document.accessSVGExtensions();
 
-    const AtomicString& tagName = element.localName();
+    const AtomString& tagName = element.localName();
     if (tagName.isNull())
         return false;
 
@@ -214,8 +215,11 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
 
     bool foundResources = false;
     if (clipperFilterMaskerTags().contains(tagName)) {
-        if (svgStyle.hasClipper()) {
-            AtomicString id(svgStyle.clipperResource());
+        if (is<ReferenceClipPathOperation>(style.clipPath())) {
+            // FIXME: -webkit-clip-path should support external resources
+            // https://bugs.webkit.org/show_bug.cgi?id=127032
+            auto& clipPath = downcast<ReferenceClipPathOperation>(*style.clipPath());
+            AtomString id(clipPath.fragment());
             if (setClipper(getRenderSVGResourceById<RenderSVGResourceClipper>(document, id)))
                 foundResources = true;
             else
@@ -228,7 +232,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
                 const FilterOperation& filterOperation = *filterOperations.at(0);
                 if (filterOperation.type() == FilterOperation::REFERENCE) {
                     const auto& referenceFilterOperation = downcast<ReferenceFilterOperation>(filterOperation);
-                    AtomicString id = SVGURIReference::fragmentIdentifierFromIRIString(referenceFilterOperation.url(), element.document());
+                    AtomString id = SVGURIReference::fragmentIdentifierFromIRIString(referenceFilterOperation.url(), element.document());
                     if (setFilter(getRenderSVGResourceById<RenderSVGResourceFilter>(document, id)))
                         foundResources = true;
                     else
@@ -238,7 +242,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
         }
 
         if (svgStyle.hasMasker()) {
-            AtomicString id(svgStyle.maskerResource());
+            AtomString id(svgStyle.maskerResource());
             if (setMasker(getRenderSVGResourceById<RenderSVGResourceMasker>(document, id)))
                 foundResources = true;
             else
@@ -247,19 +251,19 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
     }
 
     if (markerTags().contains(tagName) && svgStyle.hasMarkers()) {
-        AtomicString markerStartId(svgStyle.markerStartResource());
+        AtomString markerStartId(svgStyle.markerStartResource());
         if (setMarkerStart(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerStartId)))
             foundResources = true;
         else
             registerPendingResource(extensions, markerStartId, element);
 
-        AtomicString markerMidId(svgStyle.markerMidResource());
+        AtomString markerMidId(svgStyle.markerMidResource());
         if (setMarkerMid(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerMidId)))
             foundResources = true;
         else
             registerPendingResource(extensions, markerMidId, element);
 
-        AtomicString markerEndId(svgStyle.markerEndResource());
+        AtomString markerEndId(svgStyle.markerEndResource());
         if (setMarkerEnd(getRenderSVGResourceById<RenderSVGResourceMarker>(document, markerEndId)))
             foundResources = true;
         else
@@ -269,7 +273,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
     if (fillAndStrokeTags().contains(tagName)) {
         if (svgStyle.hasFill()) {
             bool hasPendingResource = false;
-            AtomicString id;
+            AtomString id;
             if (setFill(paintingResourceFromSVGPaint(document, svgStyle.fillPaintType(), svgStyle.fillPaintUri(), id, hasPendingResource)))
                 foundResources = true;
             else if (hasPendingResource)
@@ -278,7 +282,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
 
         if (svgStyle.hasStroke()) {
             bool hasPendingResource = false;
-            AtomicString id;
+            AtomString id;
             if (setStroke(paintingResourceFromSVGPaint(document, svgStyle.strokePaintType(), svgStyle.strokePaintUri(), id, hasPendingResource)))
                 foundResources = true;
             else if (hasPendingResource)
@@ -287,7 +291,7 @@ bool SVGResources::buildCachedResources(const RenderElement& renderer, const Ren
     }
 
     if (chainableResourceTags().contains(tagName)) {
-        AtomicString id(targetReferenceFromResource(element));
+        AtomString id(targetReferenceFromResource(element));
         auto* linkedResource = getRenderSVGResourceContainerById(document, id);
         if (!linkedResource)
             registerPendingResource(extensions, id, element);
@@ -498,7 +502,7 @@ bool SVGResources::setClipper(RenderSVGResourceClipper* clipper)
     ASSERT(clipper->resourceType() == ClipperResourceType);
 
     if (!m_clipperFilterMaskerData)
-        m_clipperFilterMaskerData = std::make_unique<ClipperFilterMaskerData>();
+        m_clipperFilterMaskerData = makeUnique<ClipperFilterMaskerData>();
 
     m_clipperFilterMaskerData->clipper = clipper;
     return true;
@@ -519,7 +523,7 @@ bool SVGResources::setFilter(RenderSVGResourceFilter* filter)
     ASSERT(filter->resourceType() == FilterResourceType);
 
     if (!m_clipperFilterMaskerData)
-        m_clipperFilterMaskerData = std::make_unique<ClipperFilterMaskerData>();
+        m_clipperFilterMaskerData = makeUnique<ClipperFilterMaskerData>();
 
     m_clipperFilterMaskerData->filter = filter;
     return true;
@@ -540,7 +544,7 @@ bool SVGResources::setMarkerStart(RenderSVGResourceMarker* markerStart)
     ASSERT(markerStart->resourceType() == MarkerResourceType);
 
     if (!m_markerData)
-        m_markerData = std::make_unique<MarkerData>();
+        m_markerData = makeUnique<MarkerData>();
 
     m_markerData->markerStart = markerStart;
     return true;
@@ -561,7 +565,7 @@ bool SVGResources::setMarkerMid(RenderSVGResourceMarker* markerMid)
     ASSERT(markerMid->resourceType() == MarkerResourceType);
 
     if (!m_markerData)
-        m_markerData = std::make_unique<MarkerData>();
+        m_markerData = makeUnique<MarkerData>();
 
     m_markerData->markerMid = markerMid;
     return true;
@@ -582,7 +586,7 @@ bool SVGResources::setMarkerEnd(RenderSVGResourceMarker* markerEnd)
     ASSERT(markerEnd->resourceType() == MarkerResourceType);
 
     if (!m_markerData)
-        m_markerData = std::make_unique<MarkerData>();
+        m_markerData = makeUnique<MarkerData>();
 
     m_markerData->markerEnd = markerEnd;
     return true;
@@ -603,7 +607,7 @@ bool SVGResources::setMasker(RenderSVGResourceMasker* masker)
     ASSERT(masker->resourceType() == MaskerResourceType);
 
     if (!m_clipperFilterMaskerData)
-        m_clipperFilterMaskerData = std::make_unique<ClipperFilterMaskerData>();
+        m_clipperFilterMaskerData = makeUnique<ClipperFilterMaskerData>();
 
     m_clipperFilterMaskerData->masker = masker;
     return true;
@@ -626,7 +630,7 @@ bool SVGResources::setFill(RenderSVGResourceContainer* fill)
            || fill->resourceType() == RadialGradientResourceType);
 
     if (!m_fillStrokeData)
-        m_fillStrokeData = std::make_unique<FillStrokeData>();
+        m_fillStrokeData = makeUnique<FillStrokeData>();
 
     m_fillStrokeData->fill = fill;
     return true;
@@ -649,7 +653,7 @@ bool SVGResources::setStroke(RenderSVGResourceContainer* stroke)
            || stroke->resourceType() == RadialGradientResourceType);
 
     if (!m_fillStrokeData)
-        m_fillStrokeData = std::make_unique<FillStrokeData>();
+        m_fillStrokeData = makeUnique<FillStrokeData>();
 
     m_fillStrokeData->stroke = stroke;
     return true;

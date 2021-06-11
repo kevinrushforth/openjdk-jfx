@@ -23,8 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef ANGLEWebKitBridge_h
-#define ANGLEWebKitBridge_h
+#pragma once
+
+#if ENABLE(GRAPHICS_CONTEXT_GL)
 
 #if USE(LIBEPOXY)
 // libepoxy headers have to be included before <ANGLE/ShaderLang.h> in order to avoid
@@ -35,19 +36,35 @@
 #include <ANGLE/ShaderLang.h>
 #include <wtf/text/WTFString.h>
 
-#if PLATFORM(IOS)
+#if USE(ANGLE)
+#include <ANGLE/gl2.h>
+
+#elif PLATFORM(COCOA)
+#if USE(OPENGL_ES)
 #import <OpenGLES/ES2/glext.h>
-#elif PLATFORM(MAC)
+#elif USE(OPENGL)
 #include <OpenGL/gl.h>
+#else
+#error Unsupported configuration
+#endif
+
 #elif PLATFORM(WIN)
 #include "OpenGLESShims.h"
+
 #elif USE(LIBEPOXY)
 // <epoxy/gl.h> already included above.
-#elif USE(OPENGL_ES_2)
+
+#elif USE(OPENGL_ES)
 #include <GLES2/gl2.h>
+
 #else
 #include "OpenGLShims.h"
 #endif
+
+// FIXME
+#define GL_VERTEX_SHADER 0x8B31
+#define GL_FRAGMENT_SHADER 0x8B30
+//
 
 namespace WebCore {
 
@@ -90,4 +107,4 @@ private:
 
 } // namespace WebCore
 
-#endif
+#endif // ENABLE(GRAPHICS_CONTEXT_GL)

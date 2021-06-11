@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include "ReferrerPolicy.h"
 #include <wtf/Forward.h>
 #include <wtf/Ref.h>
 
@@ -40,7 +41,6 @@ namespace WebCore {
 class FormData;
 class Frame;
 class HTTPHeaderMap;
-class URL;
 class ResourceRequest;
 
 enum class ViolationReportType {
@@ -48,15 +48,17 @@ enum class ViolationReportType {
     XSSAuditor,
 };
 
+enum class ContentSecurityPolicyImposition : uint8_t;
+
 class PingLoader {
 public:
     static void loadImage(Frame&, const URL&);
     static void sendPing(Frame&, const URL& pingURL, const URL& destinationURL);
-    static void sendViolationReport(Frame&, const URL& reportURL, Ref<FormData>&& report, ViolationReportType);
+    WEBCORE_EXPORT static void sendViolationReport(Frame&, const URL& reportURL, Ref<FormData>&& report, ViolationReportType);
 
 private:
     enum class ShouldFollowRedirects { No, Yes };
-    static void startPingLoad(Frame&, ResourceRequest&, HTTPHeaderMap&& originalRequestHeaders, ShouldFollowRedirects);
+    static void startPingLoad(Frame&, ResourceRequest&, HTTPHeaderMap&& originalRequestHeaders, ShouldFollowRedirects, ContentSecurityPolicyImposition, ReferrerPolicy);
 };
 
 } // namespace WebCore

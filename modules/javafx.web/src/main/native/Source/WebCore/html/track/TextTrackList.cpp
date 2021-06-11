@@ -25,7 +25,7 @@
 
 #include "config.h"
 
-#if ENABLE(VIDEO_TRACK)
+#if ENABLE(VIDEO)
 
 #include "TextTrackList.h"
 
@@ -33,10 +33,13 @@
 #include "InbandTextTrack.h"
 #include "InbandTextTrackPrivate.h"
 #include "LoadableTextTrack.h"
+#include <wtf/IsoMallocInlines.h>
 
-using namespace WebCore;
+namespace WebCore {
 
-TextTrackList::TextTrackList(HTMLMediaElement* element, ScriptExecutionContext* context)
+WTF_MAKE_ISO_ALLOCATED_IMPL(TextTrackList);
+
+TextTrackList::TextTrackList(WeakPtr<HTMLMediaElement> element, ScriptExecutionContext* context)
     : TrackListBase(element, context)
 {
 }
@@ -135,7 +138,7 @@ TextTrack* TextTrackList::item(unsigned index) const
     return nullptr;
 }
 
-TextTrack* TextTrackList::getTrackById(const AtomicString& id)
+TextTrack* TextTrackList::getTrackById(const AtomString& id)
 {
     // 4.8.10.12.5 Text track API
     // The getTrackById(id) method must return the first TextTrack in the
@@ -265,4 +268,10 @@ EventTargetInterface TextTrackList::eventTargetInterface() const
     return TextTrackListEventTargetInterfaceType;
 }
 
+const char* TextTrackList::activeDOMObjectName() const
+{
+    return "TextTrackList";
+}
+
+} // namespace WebCore
 #endif

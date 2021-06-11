@@ -36,9 +36,12 @@ public:
 
 private:
     PerformanceMark(const String& name, double startTime)
-        : PerformanceEntry(PerformanceEntry::Type::Mark, name, ASCIILiteral("mark"), startTime, startTime)
+        : PerformanceEntry(name, startTime, startTime)
     {
     }
+
+    Type type() const final { return Type::Mark; }
+    ASCIILiteral entryType() const final { return "mark"_s; }
 
     ~PerformanceMark() = default;
 };

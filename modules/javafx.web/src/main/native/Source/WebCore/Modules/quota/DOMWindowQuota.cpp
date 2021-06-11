@@ -41,7 +41,7 @@
 namespace WebCore {
 
 DOMWindowQuota::DOMWindowQuota(DOMWindow* window)
-    : DOMWindowProperty(window->frame())
+    : DOMWindowProperty(window)
 {
 }
 
@@ -57,7 +57,7 @@ DOMWindowQuota* DOMWindowQuota::from(DOMWindow* window)
 {
     DOMWindowQuota* supplement = static_cast<DOMWindowQuota*>(Supplement<DOMWindow>::from(window, supplementName()));
     if (!supplement) {
-        auto newSupplement = std::make_unique<DOMWindowQuota>(window);
+        auto newSupplement = makeUnique<DOMWindowQuota>(window);
         supplement = newSupplement.get();
         provideTo(window, supplementName(), WTFMove(newSupplement));
     }
@@ -73,7 +73,7 @@ StorageInfo* DOMWindowQuota::webkitStorageInfo(DOMWindow* window)
 StorageInfo* DOMWindowQuota::webkitStorageInfo() const
 {
     if (!m_storageInfo && frame()) {
-        frame()->document()->addConsoleMessage(MessageSource::JS, MessageLevel::Warning, ASCIILiteral("window.webkitStorageInfo is deprecated. Use navigator.webkitTemporaryStorage or navigator.webkitPersistentStorage instead."));
+        frame()->document()->addConsoleMessage(MessageSource::JS, MessageLevel::Warning, "window.webkitStorageInfo is deprecated. Use navigator.webkitTemporaryStorage or navigator.webkitPersistentStorage instead."_s);
         m_storageInfo = StorageInfo::create();
     }
     return m_storageInfo.get();

@@ -27,6 +27,7 @@
 
 #if ENABLE(WEB_RTC)
 
+#include "Document.h"
 #include "LibWebRTCProvider.h"
 #include "RTCPeerConnection.h"
 
@@ -56,9 +57,9 @@ void RTCController::remove(RTCPeerConnection& connection)
 
 static inline bool matchDocumentOrigin(Document& document, SecurityOrigin& topOrigin, SecurityOrigin& clientOrigin)
 {
-    if (originsMatch(topOrigin, document.securityOrigin()))
+    if (topOrigin.isSameOriginAs(document.securityOrigin()))
         return true;
-    return originsMatch(topOrigin, document.topOrigin()) && originsMatch(clientOrigin, document.securityOrigin());
+    return topOrigin.isSameOriginAs(document.topOrigin()) && clientOrigin.isSameOriginAs(document.securityOrigin());
 }
 
 bool RTCController::shouldDisableICECandidateFiltering(Document& document)

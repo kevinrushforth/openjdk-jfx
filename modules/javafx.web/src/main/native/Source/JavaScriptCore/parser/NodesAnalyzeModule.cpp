@@ -25,7 +25,6 @@
 
 #include "config.h"
 #include "Nodes.h"
-#include "NodeConstructors.h"
 
 #include "JSCJSValueInlines.h"
 #include "JSModuleRecord.h"
@@ -52,9 +51,11 @@ void ImportDeclarationNode::analyzeModule(ModuleAnalyzer& analyzer)
     analyzer.moduleRecord()->appendRequestedModule(m_moduleName->moduleName());
     for (auto* specifier : m_specifierList->specifiers()) {
         analyzer.moduleRecord()->addImportEntry(JSModuleRecord::ImportEntry {
+            specifier->importedName() == analyzer.vm().propertyNames->timesIdentifier
+                ? JSModuleRecord::ImportEntryType::Namespace : JSModuleRecord::ImportEntryType::Single,
             m_moduleName->moduleName(),
             specifier->importedName(),
-            specifier->localName()
+            specifier->localName(),
         });
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2011-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,46 +25,39 @@
 
 #include "config.h"
 #include "LLIntExceptions.h"
-#include "CallFrame.h"
-#include "CodeBlock.h"
-#include "Instruction.h"
+
 #include "LLIntCommon.h"
 #include "LLIntData.h"
-#include "LowLevelInterpreter.h"
-#include "JSCInlines.h"
 
-#if LLINT_SLOW_PATH_TRACING
+#if LLINT_TRACING
+#include "CatchScope.h"
 #include "Exception.h"
 #endif
 
 namespace JSC { namespace LLInt {
 
-Instruction* returnToThrowForThrownException(ExecState* exec)
+Instruction* returnToThrow(VM& vm)
 {
-    UNUSED_PARAM(exec);
-    return LLInt::exceptionInstructions();
-}
-
-Instruction* returnToThrow(ExecState* exec)
-{
-    UNUSED_PARAM(exec);
-#if LLINT_SLOW_PATH_TRACING
-    VM* vm = &exec->vm();
-    auto scope = DECLARE_THROW_SCOPE(*vm);
-    dataLog("Throwing exception ", JSValue(scope.exception()), " (returnToThrow).\n");
+    UNUSED_PARAM(vm);
+#if LLINT_TRACING
+    if (UNLIKELY(Options::traceLLIntSlowPath())) {
+        auto scope = DECLARE_CATCH_SCOPE(vm);
+        dataLog("Throwing exception ", JSValue(scope.exception()), " (returnToThrow).\n");
+    }
 #endif
     return LLInt::exceptionInstructions();
 }
 
-void* callToThrow(ExecState* exec)
+void* callToThrow(VM& vm)
 {
-    UNUSED_PARAM(exec);
-#if LLINT_SLOW_PATH_TRACING
-    VM* vm = &exec->vm();
-    auto scope = DECLARE_THROW_SCOPE(*vm);
-    dataLog("Throwing exception ", JSValue(scope.exception()), " (callToThrow).\n");
+    UNUSED_PARAM(vm);
+#if LLINT_TRACING
+    if (UNLIKELY(Options::traceLLIntSlowPath())) {
+        auto scope = DECLARE_CATCH_SCOPE(vm);
+        dataLog("Throwing exception ", JSValue(scope.exception()), " (callToThrow).\n");
+    }
 #endif
-    return LLInt::getCodePtr(llint_throw_during_call_trampoline);
+    return LLInt::getCodePtr<ExceptionHandlerPtrTag>(llint_throw_during_call_trampoline).executableAddress();
 }
 
 } } // namespace JSC::LLInt

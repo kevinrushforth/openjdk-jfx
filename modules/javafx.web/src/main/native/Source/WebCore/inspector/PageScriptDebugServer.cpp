@@ -29,13 +29,12 @@
 
 #include "CommonVM.h"
 #include "Document.h"
-#include "EventLoop.h"
+#include "Frame.h"
 #include "FrameView.h"
 #include "InspectorController.h"
 #include "InspectorFrontendClient.h"
 #include "JSDOMExceptionHandling.h"
 #include "JSDOMWindowCustom.h"
-#include "MainFrame.h"
 #include "Page.h"
 #include "PageGroup.h"
 #include "PluginViewBase.h"
@@ -45,7 +44,7 @@
 #include <wtf/MainThread.h>
 #include <wtf/StdLibExtras.h>
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
 #include "WebCoreThreadInternal.h"
 #endif
 
@@ -90,7 +89,7 @@ void PageScriptDebugServer::didContinue(JSGlobalObject*)
 
 void PageScriptDebugServer::runEventLoopWhilePaused()
 {
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     // On iOS, running an EventLoop causes us to run a nested WebRunLoop.
     // Since the WebThread is autoreleased at the end of run loop iterations
     // we need to gracefully handle releasing and reacquiring the lock.
@@ -116,30 +115,27 @@ void PageScriptDebugServer::runEventLoopWhilePausedInternal()
 
     m_page.incrementNestedRunLoopCount();
 
-    EventLoop loop;
-    while (!m_doneProcessingDebuggerEvents && !loop.ended())
-        loop.cycle();
+    while (!m_doneProcessingDebuggerEvents) {
+        if (!platformShouldContinueRunningEventLoopWhilePaused())
+            break;
+    }
 
     m_page.decrementNestedRunLoopCount();
 }
 
-bool PageScriptDebugServer::isContentScript(ExecState* exec) const
+bool PageScriptDebugServer::isContentScript(JSGlobalObject* state) const
 {
-    return &currentWorld(exec) != &mainThreadNormalWorld();
+    return &currentWorld(*state) != &mainThreadNormalWorld();
 }
 
-void PageScriptDebugServer::reportException(ExecState* exec, JSC::Exception* exception) const
+void PageScriptDebugServer::reportException(JSGlobalObject* state, JSC::Exception* exception) const
 {
-    WebCore::reportException(exec, exception);
+    WebCore::reportException(state, exception);
 }
 
 void PageScriptDebugServer::setJavaScriptPaused(const PageGroup& pageGroup, bool paused)
 {
-    setMainThreadCallbacksPaused(paused);
-
     for (auto& page : pageGroup.pages()) {
-        page->setDefersLoading(paused);
-
         for (Frame* frame = &page->mainFrame(); frame; frame = frame->tree().traverseNext())
             setJavaScriptPaused(*frame, paused);
 
@@ -163,9 +159,9 @@ void PageScriptDebugServer::setJavaScriptPaused(Frame& frame, bool paused)
     auto& document = *frame.document();
     if (paused) {
         document.suspendScriptedAnimationControllerCallbacks();
-        document.suspendActiveDOMObjects(ActiveDOMObject::JavaScriptDebuggerPaused);
+        document.suspendActiveDOMObjects(ReasonForSuspension::JavaScriptDebuggerPaused);
     } else {
-        document.resumeActiveDOMObjects(ActiveDOMObject::JavaScriptDebuggerPaused);
+        document.resumeActiveDOMObjects(ReasonForSuspension::JavaScriptDebuggerPaused);
         document.resumeScriptedAnimationControllerCallbacks();
     }
 
@@ -177,5 +173,12 @@ void PageScriptDebugServer::setJavaScriptPaused(Frame& frame, bool paused)
         }
     }
 }
+
+#if !PLATFORM(MAC)
+bool PageScriptDebugServer::platformShouldContinueRunningEventLoopWhilePaused()
+{
+    return RunLoop::cycle() != RunLoop::CycleResult::Stop;
+}
+#endif // !PLATFORM(MAC)
 
 } // namespace WebCore

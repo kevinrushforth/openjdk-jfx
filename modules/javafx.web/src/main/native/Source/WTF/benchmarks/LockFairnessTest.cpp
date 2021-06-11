@@ -33,7 +33,6 @@
 #include <unistd.h>
 #include <wtf/CommaPrinter.h>
 #include <wtf/Compiler.h>
-#include <wtf/CurrentTime.h>
 #include <wtf/DataLog.h>
 #include <wtf/HashMap.h>
 #include <wtf/Lock.h>
@@ -62,8 +61,8 @@ struct Benchmark {
     static void run(const char* name)
     {
         LockType lock;
-        std::unique_ptr<unsigned[]> counts = std::make_unique<unsigned[]>(numThreads);
-        std::unique_ptr<RefPtr<Thread>[]> threads = std::make_unique<RefPtr<Thread>[]>(numThreads);
+        std::unique_ptr<unsigned[]> counts = makeUniqueWithoutFastMallocCheck<unsigned[]>(numThreads);
+        std::unique_ptr<RefPtr<Thread>[]> threads = makeUniqueWithoutFastMallocCheck<RefPtr<Thread>[]>(numThreads);
 
         volatile bool keepGoing = true;
 
@@ -116,7 +115,7 @@ struct Benchmark {
 
 int main(int argc, char** argv)
 {
-    WTF::initializeThreading();
+    WTF::initialize();
 
     if (argc != 5
         || sscanf(argv[2], "%u", &numThreads) != 1

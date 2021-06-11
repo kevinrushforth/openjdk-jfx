@@ -38,8 +38,8 @@ public:
     bool tryRegisterRequest(CachedResource&);
 
     // CachedRawResourceClient.
-    void responseReceived(CachedResource&, const ResourceResponse&) final;
-    void notifyFinished(CachedResource&) final;
+    void responseReceived(CachedResource&, const ResourceResponse&, CompletionHandler<void()>&&) final;
+    void notifyFinished(CachedResource&, const NetworkLoadMetrics&) final;
 
 private:
     void registerRequest(CachedResource&);

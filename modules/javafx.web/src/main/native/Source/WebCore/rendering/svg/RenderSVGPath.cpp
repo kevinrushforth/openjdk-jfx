@@ -28,6 +28,7 @@
 #include "config.h"
 #include "RenderSVGPath.h"
 
+#include "Gradient.h"
 #include "SVGPathElement.h"
 #include "SVGSubpathData.h"
 #include <wtf/IsoMallocInlines.h>
@@ -101,9 +102,9 @@ void RenderSVGPath::strokeShape(GraphicsContext& context) const
     }
 }
 
-bool RenderSVGPath::shapeDependentStrokeContains(const FloatPoint& point)
+bool RenderSVGPath::shapeDependentStrokeContains(const FloatPoint& point, PointCoordinateSpace pointCoordinateSpace)
 {
-    if (RenderSVGShape::shapeDependentStrokeContains(point))
+    if (RenderSVGShape::shapeDependentStrokeContains(point, pointCoordinateSpace))
         return true;
 
     for (size_t i = 0; i < m_zeroLengthLinecapLocations.size(); ++i) {

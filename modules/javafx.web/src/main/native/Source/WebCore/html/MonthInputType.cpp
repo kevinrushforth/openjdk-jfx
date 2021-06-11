@@ -32,10 +32,11 @@
 #if ENABLE(INPUT_TYPE_MONTH)
 #include "MonthInputType.h"
 
+#include "Decimal.h"
 #include "HTMLInputElement.h"
 #include "HTMLNames.h"
 #include "InputTypeNames.h"
-#include <wtf/CurrentTime.h>
+#include "StepRange.h"
 #include <wtf/DateMath.h>
 #include <wtf/MathExtras.h>
 #include <wtf/NeverDestroyed.h>
@@ -47,8 +48,9 @@ using namespace HTMLNames;
 static const int monthDefaultStep = 1;
 static const int monthDefaultStepBase = 0;
 static const int monthStepScaleFactor = 1;
+static const StepRange::StepDescription monthStepDescription { monthDefaultStep, monthDefaultStepBase, monthStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger };
 
-const AtomicString& MonthInputType::formControlType() const
+const AtomString& MonthInputType::formControlType() const
 {
     return InputTypeNames::month();
 }
@@ -60,20 +62,21 @@ DateComponents::Type MonthInputType::dateType() const
 
 double MonthInputType::valueAsDate() const
 {
-    DateComponents date;
-    if (!parseToDateComponents(element()->value(), &date))
+    ASSERT(element());
+    auto date = parseToDateComponents(element()->value());
+    if (!date)
         return DateComponents::invalidMilliseconds();
-    double msec = date.millisecondsSinceEpoch();
+    double msec = date->millisecondsSinceEpoch();
     ASSERT(std::isfinite(msec));
     return msec;
 }
 
 String MonthInputType::serializeWithMilliseconds(double value) const
 {
-    DateComponents date;
-    if (!date.setMillisecondsSinceEpochForMonth(value))
-        return String();
-    return serializeWithComponents(date);
+    auto date = DateComponents::fromMillisecondsSinceEpochForMonth(value);
+    if (!date)
+        return { };
+    return serializeWithComponents(*date);
 }
 
 Decimal MonthInputType::defaultValueForStepUp() const
@@ -82,45 +85,43 @@ Decimal MonthInputType::defaultValueForStepUp() const
     int offset = calculateLocalTimeOffset(current).offset / msPerMinute;
     current += offset * msPerMinute;
 
-    DateComponents date;
-    date.setMillisecondsSinceEpochForMonth(current);
-    double months = date.monthsSinceEpoch();
+    auto date = DateComponents::fromMillisecondsSinceEpochForMonth(current);
+    if (!date)
+        return  { };
+
+    double months = date->monthsSinceEpoch();
     ASSERT(std::isfinite(months));
     return Decimal::fromDouble(months);
 }
 
 StepRange MonthInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
-    static NeverDestroyed<const StepRange::StepDescription> stepDescription(monthDefaultStep, monthDefaultStepBase, monthStepScaleFactor, StepRange::ParsedStepValueShouldBeInteger);
-
+    ASSERT(element());
     const Decimal stepBase = parseToNumber(element()->attributeWithoutSynchronization(minAttr), Decimal::fromDouble(monthDefaultStepBase));
     const Decimal minimum = parseToNumber(element()->attributeWithoutSynchronization(minAttr), Decimal::fromDouble(DateComponents::minimumMonth()));
     const Decimal maximum = parseToNumber(element()->attributeWithoutSynchronization(maxAttr), Decimal::fromDouble(DateComponents::maximumMonth()));
-    const Decimal step = StepRange::parseStep(anyStepHandling, stepDescription, element()->attributeWithoutSynchronization(stepAttr));
-    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, stepDescription);
+    const Decimal step = StepRange::parseStep(anyStepHandling, monthStepDescription, element()->attributeWithoutSynchronization(stepAttr));
+    return StepRange(stepBase, RangeLimitations::Valid, minimum, maximum, step, monthStepDescription);
 }
 
 Decimal MonthInputType::parseToNumber(const String& src, const Decimal& defaultValue) const
 {
-    DateComponents date;
-    if (!parseToDateComponents(src, &date))
+    auto date = parseToDateComponents(src);
+    if (!date)
         return defaultValue;
-    double months = date.monthsSinceEpoch();
+    double months = date->monthsSinceEpoch();
     ASSERT(std::isfinite(months));
     return Decimal::fromDouble(months);
 }
 
-bool MonthInputType::parseToDateComponentsInternal(const UChar* characters, unsigned length, DateComponents* out) const
+Optional<DateComponents> MonthInputType::parseToDateComponents(const StringView& source) const
 {
-    ASSERT(out);
-    unsigned end;
-    return out->parseMonth(characters, length, 0, end) && end == length;
+    return DateComponents::fromParsingMonth(source);
 }
 
-bool MonthInputType::setMillisecondToDateComponents(double value, DateComponents* date) const
+Optional<DateComponents> MonthInputType::setMillisecondToDateComponents(double value) const
 {
-    ASSERT(date);
-    return date->setMonthsSinceEpoch(value);
+    return DateComponents::fromMonthsSinceEpoch(value);
 }
 
 bool MonthInputType::isMonthField() const

@@ -40,32 +40,32 @@ static NavigationTimingFunction restrictedMarkFunction(const String& markName)
     ASSERT(isMainThread());
 
     static const auto map = makeNeverDestroyed([] {
-        static const std::pair<const char*, NavigationTimingFunction> pairs[] = {
-            { "connectEnd", &PerformanceTiming::connectEnd },
-            { "connectStart", &PerformanceTiming::connectStart },
-            { "domComplete", &PerformanceTiming::domComplete },
-            { "domContentLoadedEventEnd", &PerformanceTiming::domContentLoadedEventEnd },
-            { "domContentLoadedEventStart", &PerformanceTiming::domContentLoadedEventStart },
-            { "domInteractive", &PerformanceTiming::domInteractive },
-            { "domLoading", &PerformanceTiming::domLoading },
-            { "domainLookupEnd", &PerformanceTiming::domainLookupEnd },
-            { "domainLookupStart", &PerformanceTiming::domainLookupStart },
-            { "fetchStart", &PerformanceTiming::fetchStart },
-            { "loadEventEnd", &PerformanceTiming::loadEventEnd },
-            { "loadEventStart", &PerformanceTiming::loadEventStart },
-            { "navigationStart", &PerformanceTiming::navigationStart },
-            { "redirectEnd", &PerformanceTiming::redirectEnd },
-            { "redirectStart", &PerformanceTiming::redirectStart },
-            { "requestStart", &PerformanceTiming::requestStart },
-            { "responseEnd", &PerformanceTiming::responseEnd },
-            { "responseStart", &PerformanceTiming::responseStart },
-            { "secureConnectionStart", &PerformanceTiming::secureConnectionStart },
-            { "unloadEventEnd", &PerformanceTiming::unloadEventEnd },
-            { "unloadEventStart", &PerformanceTiming::unloadEventStart },
+        static const std::pair<ASCIILiteral, NavigationTimingFunction> pairs[] = {
+            { "connectEnd"_s, &PerformanceTiming::connectEnd },
+            { "connectStart"_s, &PerformanceTiming::connectStart },
+            { "domComplete"_s, &PerformanceTiming::domComplete },
+            { "domContentLoadedEventEnd"_s, &PerformanceTiming::domContentLoadedEventEnd },
+            { "domContentLoadedEventStart"_s, &PerformanceTiming::domContentLoadedEventStart },
+            { "domInteractive"_s, &PerformanceTiming::domInteractive },
+            { "domLoading"_s, &PerformanceTiming::domLoading },
+            { "domainLookupEnd"_s, &PerformanceTiming::domainLookupEnd },
+            { "domainLookupStart"_s, &PerformanceTiming::domainLookupStart },
+            { "fetchStart"_s, &PerformanceTiming::fetchStart },
+            { "loadEventEnd"_s, &PerformanceTiming::loadEventEnd },
+            { "loadEventStart"_s, &PerformanceTiming::loadEventStart },
+            { "navigationStart"_s, &PerformanceTiming::navigationStart },
+            { "redirectEnd"_s, &PerformanceTiming::redirectEnd },
+            { "redirectStart"_s, &PerformanceTiming::redirectStart },
+            { "requestStart"_s, &PerformanceTiming::requestStart },
+            { "responseEnd"_s, &PerformanceTiming::responseEnd },
+            { "responseStart"_s, &PerformanceTiming::responseStart },
+            { "secureConnectionStart"_s, &PerformanceTiming::secureConnectionStart },
+            { "unloadEventEnd"_s, &PerformanceTiming::unloadEventEnd },
+            { "unloadEventStart"_s, &PerformanceTiming::unloadEventStart },
         };
         HashMap<String, NavigationTimingFunction> map;
         for (auto& pair : pairs)
-            map.add(ASCIILiteral { pair.first }, pair.second);
+            map.add(pair.first, pair.second);
         return map;
     }());
 
@@ -93,7 +93,7 @@ ExceptionOr<Ref<PerformanceMark>> UserTiming::mark(const String& markName)
     auto& performanceEntryList = m_marksMap.ensure(markName, [] { return Vector<RefPtr<PerformanceEntry>>(); }).iterator->value;
     auto entry = PerformanceMark::create(markName, m_performance.now());
     performanceEntryList.append(entry.copyRef());
-    return WTFMove(entry);
+    return entry;
 }
 
 void UserTiming::clearMarks(const String& markName)
@@ -148,7 +148,7 @@ ExceptionOr<Ref<PerformanceMeasure>> UserTiming::measure(const String& measureNa
     auto& performanceEntryList = m_measuresMap.ensure(measureName, [] { return Vector<RefPtr<PerformanceEntry>>(); }).iterator->value;
     auto entry = PerformanceMeasure::create(measureName, startTime, endTime);
     performanceEntryList.append(entry.copyRef());
-    return WTFMove(entry);
+    return entry;
 }
 
 void UserTiming::clearMeasures(const String& measureName)

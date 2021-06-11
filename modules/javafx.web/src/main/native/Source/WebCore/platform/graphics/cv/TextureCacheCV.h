@@ -23,10 +23,9 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TextureCacheCV_h
-#define TextureCacheCV_h
+#pragma once
 
-#include "GraphicsTypes3D.h"
+#include "GraphicsTypesGL.h"
 #include <wtf/Ref.h>
 #include <wtf/RetainPtr.h>
 #include <wtf/WeakPtr.h>
@@ -40,31 +39,29 @@ typedef struct __CVOpenGLESTextureCache *CVOpenGLESTextureCacheRef;
 
 namespace WebCore {
 
-class GraphicsContext3D;
+class GraphicsContextGLOpenGL;
 
-class TextureCacheCV {
+class TextureCacheCV : public CanMakeWeakPtr<TextureCacheCV> {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
-    static std::unique_ptr<TextureCacheCV> create(GraphicsContext3D&);
+    static std::unique_ptr<TextureCacheCV> create(GraphicsContextGLOpenGL&);
 
-#if PLATFORM(IOS)
-    typedef CVOpenGLESTextureCacheRef  TextureCacheType;
-    typedef CVOpenGLESTextureRef TextureType;
+#if USE(OPENGL_ES)
+    using TextureCacheType = CVOpenGLESTextureCacheRef;
+    using TextureType = CVOpenGLESTextureRef;
 #else
-    typedef CVOpenGLTextureCacheRef  TextureCacheType;
-    typedef CVOpenGLTextureRef TextureType;
+    using TextureCacheType = CVOpenGLTextureCacheRef;
+    using TextureType = CVOpenGLTextureRef;
 #endif
 
-    TextureCacheCV(GraphicsContext3D&, RetainPtr<TextureCacheType>&&);
+    TextureCacheCV(GraphicsContextGLOpenGL&, RetainPtr<TextureCacheType>&&);
 
-    RetainPtr<TextureType> textureFromImage(CVPixelBufferRef, GC3Denum outputTarget, GC3Dint level, GC3Denum internalFormat, GC3Denum format, GC3Denum type);
-    GraphicsContext3D& context() { return m_context.get(); }
+    RetainPtr<TextureType> textureFromImage(CVPixelBufferRef, GCGLenum outputTarget, GCGLint level, GCGLenum internalFormat, GCGLenum format, GCGLenum type);
+    GraphicsContextGLOpenGL& context() { return m_context.get(); }
 
 private:
-    Ref<GraphicsContext3D> m_context;
+    Ref<GraphicsContextGLOpenGL> m_context;
     RetainPtr<TextureCacheType> m_cache;
-    WeakPtrFactory<TextureCacheCV> m_weakPtrFactory;
 };
 
 }
-
-#endif // TextureCacheCV_h

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2014-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,7 +27,7 @@
 #include "BInline.h"
 #include "Chunk.h"
 #include "Deallocator.h"
-#include "DebugHeap.h"
+#include "Environment.h"
 #include "Heap.h"
 #include "Object.h"
 #include "PerProcess.h"
@@ -35,19 +35,12 @@
 #include <cstdlib>
 #include <sys/mman.h>
 
-using namespace std;
-
 namespace bmalloc {
 
 Deallocator::Deallocator(Heap& heap)
     : m_heap(heap)
-    , m_debugHeap(heap.debugHeap())
 {
-    if (m_debugHeap) {
-        // Fill the object log in order to disable the fast path.
-        while (m_objectLog.size() != m_objectLog.capacity())
-            m_objectLog.push(nullptr);
-    }
+    BASSERT(!Environment::get()->isDebugHeapEnabled());
 }
 
 Deallocator::~Deallocator()
@@ -57,16 +50,13 @@ Deallocator::~Deallocator()
 
 void Deallocator::scavenge()
 {
-    if (m_debugHeap)
-        return;
-
-    std::lock_guard<StaticMutex> lock(Heap::mutex());
+    UniqueLockHolder lock(Heap::mutex());
 
     processObjectLog(lock);
     m_heap.deallocateLineCache(lock, lineCache(lock));
 }
 
-void Deallocator::processObjectLog(std::lock_guard<StaticMutex>& lock)
+void Deallocator::processObjectLog(UniqueLockHolder& lock)
 {
     for (Object object : m_objectLog)
         m_heap.derefSmallLine(lock, object, lineCache(lock));
@@ -75,20 +65,19 @@ void Deallocator::processObjectLog(std::lock_guard<StaticMutex>& lock)
 
 void Deallocator::deallocateSlowCase(void* object)
 {
-    if (m_debugHeap)
-        return m_debugHeap->free(object);
-
     if (!object)
         return;
 
-    std::lock_guard<StaticMutex> lock(Heap::mutex());
-    if (m_heap.isLarge(lock, object)) {
+    if (m_heap.isLarge(object)) {
+        UniqueLockHolder lock(Heap::mutex());
         m_heap.deallocateLarge(lock, object);
         return;
     }
 
-    if (m_objectLog.size() == m_objectLog.capacity())
+    if (m_objectLog.size() == m_objectLog.capacity()) {
+        UniqueLockHolder lock(Heap::mutex());
         processObjectLog(lock);
+    }
 
     m_objectLog.push(object);
 }

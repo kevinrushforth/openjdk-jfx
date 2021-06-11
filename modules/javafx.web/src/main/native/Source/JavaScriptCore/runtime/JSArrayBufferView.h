@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013-2018 Apple Inc. All rights reserved.
+ * Copyright (C) 2013-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,21 +26,12 @@
 #pragma once
 
 #include "AuxiliaryBarrier.h"
-#include "CagedBarrierPtr.h"
-#include "JSCPoison.h"
 #include "JSObject.h"
-#include "TypedArrayType.h"
-#include <wtf/MathExtras.h>
+#include <wtf/TaggedArrayStoragePtr.h>
 
 namespace JSC {
 
 class LLIntOffsetsExtractor;
-
-// Since we'll be indexing into the g_typedArrayPoisons array based on the TypedArray type,
-// we'll index mask the index value and round up to the array size to the next power of 2 to
-// ensure that we'll never be able to access beyond the bounds of this array.
-static constexpr uint32_t NumberOfTypedArrayPoisons = WTF::roundUpToPowerOfTwo(NumberOfTypedArrayTypes);
-static constexpr uint32_t TypedArrayPoisonIndexMask = NumberOfTypedArrayPoisons - 1;
 
 // This class serves two purposes:
 //
@@ -64,16 +55,21 @@ static constexpr uint32_t TypedArrayPoisonIndexMask = NumberOfTypedArrayPoisons 
 // whether the user has done anything that requires a separate backing
 // buffer or the DOM-specified neutering capabilities.
 enum TypedArrayMode : uint32_t {
+    // Legend:
+    // B: JSArrayBufferView::m_butterfly pointer
+    // V: JSArrayBufferView::m_vector pointer
+    // M: JSArrayBufferView::m_mode
+
     // Small and fast typed array. B is unused, V points to a vector
-    // allocated in copied space, and M = FastTypedArray. V's liveness is
-    // determined entirely by the view's liveness.
+    // allocated in the primitive Gigacage, and M = FastTypedArray. V's
+    // liveness is determined entirely by the view's liveness.
     FastTypedArray,
 
     // A large typed array that still attempts not to waste too much
-    // memory. B is initialized to point to a slot that could hold a
-    // buffer pointer, V points to a vector allocated using fastCalloc(),
-    // and M = OversizeTypedArray. V's liveness is determined entirely by
-    // the view's liveness, and the view will add a finalizer to delete V.
+    // memory. B is unused, V points to a vector allocated using
+    // Gigacage::tryMalloc(), and M = OversizeTypedArray. V's liveness is
+    // determined entirely by the view's liveness, and the view will add a
+    // finalizer to delete V.
     OversizeTypedArray,
 
     // A typed array that was used in some crazy way. B's IndexingHeader
@@ -104,12 +100,26 @@ inline bool hasArrayBuffer(TypedArrayMode mode)
 
 class JSArrayBufferView : public JSNonFinalObject {
 public:
-    typedef JSNonFinalObject Base;
-    static const unsigned fastSizeLimit = 1000;
+    using Base = JSNonFinalObject;
+
+    template<typename, SubspaceAccess>
+    static void subspaceFor(VM&)
+    {
+        RELEASE_ASSERT_NOT_REACHED();
+    }
+
+    static constexpr unsigned fastSizeLimit = 1000;
+    using VectorPtr = CagedBarrierPtr<Gigacage::Primitive, void, tagCagedPtr>;
+
+    static void* nullVectorPtr()
+    {
+        VectorPtr null { };
+        return null.rawBits();
+    }
 
     static size_t sizeOf(uint32_t length, uint32_t elementSize)
     {
-        return (length * elementSize + sizeof(EncodedJSValue) - 1)
+        return (static_cast<size_t>(length) * elementSize + sizeof(EncodedJSValue) - 1)
             & ~(sizeof(EncodedJSValue) - 1);
     }
 
@@ -143,14 +153,15 @@ protected:
         bool operator!() const { return !m_structure; }
 
         Structure* structure() const { return m_structure; }
-        void* vector() const { return m_vector.getMayBeNull(); }
+        void* vector() const { return m_vector.getMayBeNull(m_length); }
         uint32_t length() const { return m_length; }
         TypedArrayMode mode() const { return m_mode; }
         Butterfly* butterfly() const { return m_butterfly; }
 
     private:
         Structure* m_structure;
-        CagedPtr<Gigacage::Primitive, void> m_vector;
+        using VectorType = CagedPtr<Gigacage::Primitive, void, tagCagedPtr>;
+        VectorType m_vector;
         uint32_t m_length;
         TypedArrayMode m_mode;
         Butterfly* m_butterfly;
@@ -159,7 +170,7 @@ protected:
     JS_EXPORT_PRIVATE JSArrayBufferView(VM&, ConstructionContext&);
     JS_EXPORT_PRIVATE void finishCreation(VM&);
 
-    static bool put(JSCell*, ExecState*, PropertyName, JSValue, PutPropertySlot&);
+    static bool put(JSCell*, JSGlobalObject*, PropertyName, JSValue, PutPropertySlot&);
 
     static void visitChildren(JSCell*, SlotVisitor&);
 
@@ -169,39 +180,36 @@ public:
 
     bool isShared();
     JS_EXPORT_PRIVATE ArrayBuffer* unsharedBuffer();
-    ArrayBuffer* possiblySharedBuffer();
-    JSArrayBuffer* unsharedJSBuffer(ExecState* exec);
-    JSArrayBuffer* possiblySharedJSBuffer(ExecState* exec);
+    inline ArrayBuffer* possiblySharedBuffer();
+    JSArrayBuffer* unsharedJSBuffer(JSGlobalObject* globalObject);
+    JSArrayBuffer* possiblySharedJSBuffer(JSGlobalObject* globalObject);
     RefPtr<ArrayBufferView> unsharedImpl();
-    RefPtr<ArrayBufferView> possiblySharedImpl();
-    bool isNeutered() { return hasArrayBuffer() && !vector(); }
+    JS_EXPORT_PRIVATE RefPtr<ArrayBufferView> possiblySharedImpl();
+    bool isNeutered() { return hasArrayBuffer() && !hasVector(); }
     void neuter();
 
-    void* vector() const { return m_poisonedVector.getMayBeNull(); }
+    bool hasVector() const { return !!m_vector; }
+    void* vector() const { return m_vector.getMayBeNull(length()); }
 
-    unsigned byteOffset();
+    inline unsigned byteOffset();
+    inline Optional<unsigned> byteOffsetConcurrently();
+
     unsigned length() const { return m_length; }
 
     DECLARE_EXPORT_INFO;
 
-    static ptrdiff_t offsetOfPoisonedVector() { return OBJECT_OFFSETOF(JSArrayBufferView, m_poisonedVector); }
+    static ptrdiff_t offsetOfVector() { return OBJECT_OFFSETOF(JSArrayBufferView, m_vector); }
     static ptrdiff_t offsetOfLength() { return OBJECT_OFFSETOF(JSArrayBufferView, m_length); }
     static ptrdiff_t offsetOfMode() { return OBJECT_OFFSETOF(JSArrayBufferView, m_mode); }
 
     static RefPtr<ArrayBufferView> toWrapped(VM&, JSValue);
 
-    static uintptr_t poisonFor(JSType type)
-    {
-        return g_typedArrayPoisons[(type - FirstTypedArrayType) & TypedArrayPoisonIndexMask];
-    }
-
-    static uintptr_t poisonFor(TypedArrayType typedArrayType)
-    {
-        ASSERT(isTypedView(typedArrayType));
-        return poisonFor(typeForTypedArrayType(typedArrayType));
-    }
-
 private:
+    enum Requester { Mutator, ConcurrentThread };
+    template<Requester, typename ResultType> ResultType byteOffsetImpl();
+    template<Requester> ArrayBuffer* possiblySharedBufferImpl();
+
+    JS_EXPORT_PRIVATE ArrayBuffer* slowDownAndWasteMemory();
     static void finalize(JSCell*);
 
 protected:
@@ -209,21 +217,7 @@ protected:
 
     ArrayBuffer* existingBufferInButterfly();
 
-    static String toStringName(const JSObject*, ExecState*);
-
-    class Poison {
-    public:
-        template<typename PoisonedType>
-        inline static uintptr_t key(const PoisonedType* poisonedPtr)
-        {
-            uintptr_t poisonedVectorAddress = bitwise_cast<uintptr_t>(poisonedPtr);
-            uintptr_t baseAddress = poisonedVectorAddress - OBJECT_OFFSETOF(JSArrayBufferView, m_poisonedVector);
-            JSArrayBufferView* thisObject = bitwise_cast<JSArrayBufferView*>(baseAddress);
-            return poisonFor(thisObject->type());
-        }
-    };
-
-    PoisonedCagedBarrierPtr<Poison, Gigacage::Primitive, void> m_poisonedVector;
+    VectorPtr m_vector;
     uint32_t m_length;
     TypedArrayMode m_mode;
 };

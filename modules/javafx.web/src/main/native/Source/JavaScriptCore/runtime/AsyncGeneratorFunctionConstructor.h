@@ -31,7 +31,7 @@ namespace JSC {
 
 class AsyncGeneratorFunctionPrototype;
 
-class AsyncGeneratorFunctionConstructor : public InternalFunction {
+class AsyncGeneratorFunctionConstructor final : public InternalFunction {
 public:
     using Base = InternalFunction;
 
@@ -53,5 +53,6 @@ private:
     AsyncGeneratorFunctionConstructor(VM&, Structure*);
     void finishCreation(VM&, AsyncGeneratorFunctionPrototype*);
 };
+STATIC_ASSERT_ISO_SUBSPACE_SHARABLE(AsyncGeneratorFunctionConstructor, InternalFunction);
 
 } // namespace JSC

@@ -26,11 +26,20 @@
 #include "config.h"
 #include "Watchpoint.h"
 
+#include "AdaptiveInferredPropertyValueWatchpointBase.h"
+#include "CodeBlockJettisoningWatchpoint.h"
+#include "DFGAdaptiveStructureWatchpoint.h"
+#include "FunctionRareData.h"
 #include "HeapInlines.h"
+#include "LLIntPrototypeLoadAdaptiveStructureWatchpoint.h"
+#include "ObjectToStringAdaptiveStructureWatchpoint.h"
+#include "StructureStubClearingWatchpoint.h"
 #include "VM.h"
-#include <wtf/CompilationThread.h>
 
 namespace JSC {
+
+DEFINE_ALLOCATOR_WITH_HEAP_IDENTIFIER(Watchpoint);
+DEFINE_ALLOCATOR_WITH_HEAP_IDENTIFIER(WatchpointSet);
 
 void StringFireDetail::dump(PrintStream& out) const
 {
@@ -49,10 +58,17 @@ Watchpoint::~Watchpoint()
     }
 }
 
-void Watchpoint::fire(const FireDetail& detail)
+void Watchpoint::fire(VM& vm, const FireDetail& detail)
 {
     RELEASE_ASSERT(!isOnList());
-    fireInternal(detail);
+    switch (m_type) {
+#define JSC_DEFINE_WATCHPOINT_DISPATCH(type, cast) \
+    case Type::type: \
+        static_cast<cast*>(this)->fireInternal(vm, detail); \
+        break;
+    JSC_WATCHPOINT_TYPES(JSC_DEFINE_WATCHPOINT_DISPATCH)
+#undef JSC_DEFINE_WATCHPOINT_DISPATCH
+    }
 }
 
 WatchpointSet::WatchpointSet(WatchpointState state)
@@ -137,7 +153,7 @@ void WatchpointSet::fireAllWatchpoints(VM& vm, const FireDetail& detail)
         ASSERT(m_set.begin() != watchpoint);
         ASSERT(!watchpoint->isOnList());
 
-        watchpoint->fire(detail);
+        watchpoint->fire(vm, detail);
         // After we fire the watchpoint, the watchpoint pointer may be a dangling pointer. That's
         // fine, because we have no use for the pointer anymore.
     }
@@ -166,7 +182,7 @@ WatchpointSet* InlineWatchpointSet::inflateSlow()
 {
     ASSERT(isThin());
     ASSERT(!isCompilationThread());
-    WatchpointSet* fat = adoptRef(new WatchpointSet(decodeState(m_data))).leakRef();
+    WatchpointSet* fat = &WatchpointSet::create(decodeState(m_data)).leakRef();
     WTF::storeStoreFence();
     m_data = bitwise_cast<uintptr_t>(fat);
     return fat;
@@ -202,4 +218,24 @@ void DeferredWatchpointFire::takeWatchpointsToFire(WatchpointSet* watchpointsToF
 }
 
 } // namespace JSC
+
+namespace WTF {
+
+void printInternal(PrintStream& out, JSC::WatchpointState state)
+{
+    switch (state) {
+    case JSC::ClearWatchpoint:
+        out.print("ClearWatchpoint");
+        return;
+    case JSC::IsWatched:
+        out.print("IsWatched");
+        return;
+    case JSC::IsInvalidated:
+        out.print("IsInvalidated");
+        return;
+    }
+    RELEASE_ASSERT_NOT_REACHED();
+}
+
+} // namespace WTF
 
